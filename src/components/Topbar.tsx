@@ -122,9 +122,13 @@ export default function Topbar({
             เชื่อมต่อ Supabase Realtime แล้ว ⚡
           </div>
         ) : (
-          <div className="hidden md:flex items-center gap-1.5 bg-slate-50 border border-slate-200 text-slate-500 px-2.5 py-1 rounded-full text-[10px] font-semibold">
-            <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse"></span>
-            กำลังตรวจสอบระบบ...
+          <div 
+            onClick={onOpenDbModal}
+            className="flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 px-2.5 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all"
+            title="ระบบบันทึกข้อมูลทันทีและกำลังเชื่อมต่อ/ซิงค์ฐานข้อมูลอัตโนมัติ (คลิกเพื่อดูการตั้งค่า)"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-ping"></span>
+            ⚡ ซิงค์อัตโนมัติ (บันทึกข้อมูลได้ทันที)
           </div>
         )}
 

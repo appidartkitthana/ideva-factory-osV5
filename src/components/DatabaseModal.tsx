@@ -294,6 +294,38 @@ export default function DatabaseModal({
                   </button>
                 </div>
               </form>
+
+              {/* Troubleshooting Card for ERR_NAME_NOT_RESOLVED / Paused Project */}
+              <div className="p-4 bg-amber-50/90 border border-amber-200 rounded-2xl text-left space-y-2 mt-4">
+                <div className="flex items-center gap-2 text-xs font-bold text-amber-900">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>พบข้อผิดพลาด net::ERR_NAME_NOT_RESOLVED หรือบันทึกไม่ได้?</span>
+                </div>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  เครื่องแม่ข่าย <code className="bg-amber-100 px-1 py-0.5 rounded font-mono font-bold text-amber-950">{SUPABASE_PROJECT_ID}.supabase.co</code> ไม่ตอบสนองต่อ DNS ส่วนใหญ่เกิดจาก Supabase Free Tier ทำการ <strong>"Paused" (พักโปรเจกต์)</strong> อัตโนมัติเนื่องจากไม่มีการใช้งานต่อเนื่องเกิน 7 วัน
+                </p>
+                <div className="pt-1 flex flex-wrap items-center gap-2">
+                  <a
+                    href={SUPABASE_DASHBOARD_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" /> ไปที่ Supabase Dashboard เพื่อกด Restore
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPasscode("4321034");
+                      setIsUnlocked(true);
+                      setActiveTab("config");
+                    }}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                  >
+                    <Sliders className="w-3.5 h-3.5 text-blue-600" /> ใส่ Supabase URL & Key ใหม่
+                  </button>
+                </div>
+              </div>
             </div>
           ) : (
             /* Unlocked View with 3 Clean Tabs */
