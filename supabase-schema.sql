@@ -240,7 +240,38 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 
 -- ============================================================================
--- 14. ROW LEVEL SECURITY (RLS) POLICIES — 100% PUBLIC ACCESS FOR ANON
+-- 14. SEMI-FINISHED GOODS TABLE (สินค้ากึ่งสำเร็จรูป / WIP Bulk)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS semi_finished_goods (
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(50) NOT NULL UNIQUE,
+    name VARCHAR(255) NOT NULL,
+    batch_no VARCHAR(100),
+    qty DECIMAL(12,4) DEFAULT 0.0000,
+    unit VARCHAR(50) DEFAULT 'KG.',
+    tank_no VARCHAR(100),
+    mfg_date DATE,
+    status VARCHAR(50) DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================================
+-- 15. REQUISITIONS TABLE (ใบเบิกพัสดุและวัตถุดิบเคมี)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS requisitions (
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(50) NOT NULL UNIQUE,
+    date DATE,
+    department VARCHAR(255) NOT NULL,
+    requester VARCHAR(255) NOT NULL,
+    purpose TEXT,
+    status VARCHAR(50) DEFAULT 'approved',
+    items JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================================
+-- 16. ROW LEVEL SECURITY (RLS) POLICIES — 100% PUBLIC ACCESS FOR ANON
 -- ============================================================================
 -- This enables full CRUD (SELECT, INSERT, UPDATE, DELETE) for the client app
 
@@ -251,7 +282,7 @@ DECLARE
         'suppliers', 'customers', 'products', 'raw_materials',
         'bom_recipes', 'bom_items', 'production_orders', 'packing_orders',
         'purchase_orders', 'purchase_order_items', 'grns', 'prechecks',
-        'inventory_pack', 'purchase_packs', 'projects'
+        'inventory_pack', 'purchase_packs', 'projects', 'semi_finished_goods', 'requisitions'
     ];
 BEGIN
     FOREACH tbl IN ARRAY tables LOOP
@@ -262,7 +293,7 @@ BEGIN
 END $$;
 
 -- ============================================================================
--- 15. ENABLE SUPABASE REALTIME REPLICATION (เรียลไทม์ 100%)
+-- 17. ENABLE SUPABASE REALTIME REPLICATION (เรียลไทม์ 100%)
 -- ============================================================================
 -- Set Replica Identity to FULL so UPDATE/DELETE events carry all record columns
 
@@ -281,6 +312,8 @@ ALTER TABLE prechecks REPLICA IDENTITY FULL;
 ALTER TABLE inventory_pack REPLICA IDENTITY FULL;
 ALTER TABLE purchase_packs REPLICA IDENTITY FULL;
 ALTER TABLE projects REPLICA IDENTITY FULL;
+ALTER TABLE semi_finished_goods REPLICA IDENTITY FULL;
+ALTER TABLE requisitions REPLICA IDENTITY FULL;
 
 -- Add all tables to the realtime publication
 DO $$
@@ -290,7 +323,7 @@ DECLARE
         'suppliers', 'customers', 'products', 'raw_materials',
         'bom_recipes', 'bom_items', 'production_orders', 'packing_orders',
         'purchase_orders', 'purchase_order_items', 'grns', 'prechecks',
-        'inventory_pack', 'purchase_packs', 'projects'
+        'inventory_pack', 'purchase_packs', 'projects', 'semi_finished_goods', 'requisitions'
     ];
 BEGIN
     FOREACH tbl IN ARRAY tables LOOP

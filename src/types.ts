@@ -201,3 +201,27 @@ export interface Project {
   category?: string;          // ประเภท
   created_at?: string;
 }
+
+export interface SemiFinishedGood {
+  id: number;
+  code: string;
+  name: string;
+  batch_no: string;
+  qty: number;
+  unit: string;
+  tank_no: string;
+  mfg_date: string;
+  status: string;
+}
+
+export interface RequisitionSlip {
+  id: number;
+  code: string;
+  date: string;
+  department: string;
+  requester: string;
+  items: { item_name: string; qty: number; unit: string }[];
+  status: "approved" | "pending";
+  purpose: string;
+}
+

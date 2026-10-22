@@ -30,7 +30,10 @@ import {
   Grn, 
   Precheck, 
   InventoryPack,
-  Project
+  Project,
+  Supplier,
+  SemiFinishedGood,
+  RequisitionSlip
 } from "./types";
 import { CheckCircle2, AlertCircle } from "lucide-react";
 
@@ -109,6 +112,9 @@ export default function App() {
   const [prechecks, setPrechecks] = useState<Precheck[]>([]);
   const [inventoryPacks, setInventoryPacks] = useState<InventoryPack[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [semiGoods, setSemiGoods] = useState<SemiFinishedGood[]>([]);
+  const [requisitions, setRequisitions] = useState<RequisitionSlip[]>([]);
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
 
   // UI Toast state
@@ -139,7 +145,10 @@ export default function App() {
         grnLogs,
         checks,
         packs,
-        projs
+        projs,
+        sups,
+        semiList,
+        reqList
       ] = await Promise.all([
         clientGetList("customers"),
         clientGetList("products"),
@@ -151,7 +160,10 @@ export default function App() {
         clientGetList("grns"),
         clientGetList("prechecks"),
         clientGetList("inventory_pack"),
-        clientGetList("projects")
+        clientGetList("projects"),
+        clientGetList("suppliers"),
+        clientGetList("semi_finished_goods"),
+        clientGetList("requisitions")
       ]);
 
     // Enrich BOM Recipes with Product Info (code, name, type)
@@ -180,6 +192,9 @@ export default function App() {
     setPrechecks(checks);
     setInventoryPacks(packs);
     setProjects(projs);
+    setSuppliers(sups);
+    setSemiGoods(semiList);
+    setRequisitions(reqList);
   } catch (err) {
     console.warn("Error refreshing data:", err);
   }
@@ -226,7 +241,7 @@ export default function App() {
     }
   };
 
-  const handleDelete = async (entity: string, id: number, successMsg: string) => {
+  const handleDelete = async (entity: string, id: number | string, successMsg: string) => {
     try {
       // 1. Optimistic React state update: remove immediately so user sees instant reaction
       const strId = String(id);
@@ -241,6 +256,9 @@ export default function App() {
       else if (entity === "raw_materials") setRawMaterials(prev => prev.filter(rm => String(rm.id) !== strId));
       else if (entity === "inventory_pack") setInventoryPacks(prev => prev.filter(ip => String(ip.id) !== strId));
       else if (entity === "products") setProducts(prev => prev.filter(p => String(p.id) !== strId));
+      else if (entity === "suppliers") setSuppliers(prev => prev.filter(s => String(s.id) !== strId));
+      else if (entity === "semi_finished_goods") setSemiGoods(prev => prev.filter(s => String(s.id) !== strId));
+      else if (entity === "requisitions") setRequisitions(prev => prev.filter(r => String(r.id) !== strId));
 
       const success = await clientDelete(entity, id);
       if (success) {
@@ -426,6 +444,9 @@ export default function App() {
             productionOrders={productionOrders}
             bomRecipes={bomRecipes}
             products={products}
+            suppliers={suppliers}
+            semiGoods={semiGoods}
+            requisitions={requisitions}
             grns={grns}
             purchaseOrders={purchaseOrders}
             setActivePage={setActivePage}
@@ -443,6 +464,30 @@ export default function App() {
             }}
             onDeleteInventoryPack={async (id) => {
               await handleDelete("inventory_pack", id, "ลบข้อมูลบรรจุภัณฑ์สำเร็จ!");
+            }}
+            onSaveSupplier={async (payload) => {
+              await handleSave("suppliers", payload, "บันทึกข้อมูลผู้จำหน่ายสำเร็จ!");
+            }}
+            onDeleteSupplier={async (id) => {
+              await handleDelete("suppliers", id, "ลบข้อมูลผู้จำหน่ายเรียบร้อยแล้ว!");
+            }}
+            onSaveProduct={async (payload) => {
+              await handleSave("products", payload, "บันทึกข้อมูลสินค้าสำเร็จรูปสำเร็จ!");
+            }}
+            onDeleteProduct={async (id) => {
+              await handleDelete("products", id, "ลบข้อมูลสินค้าสำเร็จรูปเรียบร้อยแล้ว!");
+            }}
+            onSaveSemiGood={async (payload) => {
+              await handleSave("semi_finished_goods", payload, "บันทึกสินค้ากึ่งสำเร็จรูปสำเร็จ!");
+            }}
+            onDeleteSemiGood={async (id) => {
+              await handleDelete("semi_finished_goods", id, "ลบสินค้ากึ่งสำเร็จรูปเรียบร้อยแล้ว!");
+            }}
+            onSaveRequisition={async (payload) => {
+              await handleSave("requisitions", payload, "บันทึกใบเบิกพัสดุสำเร็จ!");
+            }}
+            onDeleteRequisition={async (id) => {
+              await handleDelete("requisitions", id, "ลบใบเบิกพัสดุเรียบร้อยแล้ว!");
             }}
           />
         );

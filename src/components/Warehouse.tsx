@@ -16,7 +16,18 @@ import {
   ShoppingCart,
   Layers
 } from "lucide-react";
-import { RawMaterial, InventoryPack, ProductionOrder, Grn, PurchaseOrder, BomRecipe, Product } from "../types";
+import { 
+  RawMaterial, 
+  InventoryPack, 
+  ProductionOrder, 
+  Grn, 
+  PurchaseOrder, 
+  BomRecipe, 
+  Product,
+  Supplier,
+  SemiFinishedGood,
+  RequisitionSlip
+} from "../types";
 
 // ============================================================================
 // EXACT SOLID ICONS MATCHING USER SCREENSHOT WITH PASTEL ACCENT SUPPORT
@@ -93,41 +104,29 @@ const CubesIcon = ({ className = "w-9 h-9 fill-current" }: { className?: string 
 // COMPONENT INTERFACES
 // ============================================================================
 
-interface SemiFinishedGood {
-  id: number;
-  code: string;
-  name: string;
-  batch_no: string;
-  qty: number;
-  unit: string;
-  tank_no: string;
-  mfg_date: string;
-  status: string;
-}
-
-interface RequisitionSlip {
-  id: number;
-  code: string;
-  date: string;
-  department: string;
-  requester: string;
-  items: { item_name: string; qty: number; unit: string }[];
-  status: "approved" | "pending";
-  purpose: string;
-}
-
 interface WarehouseProps {
   rawMaterials: RawMaterial[];
   inventoryPacks: InventoryPack[];
   productionOrders: ProductionOrder[];
   bomRecipes?: BomRecipe[];
   products?: Product[];
+  suppliers?: Supplier[];
+  semiGoods?: SemiFinishedGood[];
+  requisitions?: RequisitionSlip[];
   grns?: Grn[];
   purchaseOrders?: PurchaseOrder[];
   onSaveRawMaterial?: (rm: any) => Promise<void>;
-  onDeleteRawMaterial?: (id: number) => Promise<void>;
+  onDeleteRawMaterial?: (id: number | string) => Promise<void>;
   onSaveInventoryPack?: (ip: any) => Promise<void>;
-  onDeleteInventoryPack?: (id: number) => Promise<void>;
+  onDeleteInventoryPack?: (id: number | string) => Promise<void>;
+  onSaveSupplier?: (sup: any) => Promise<void>;
+  onDeleteSupplier?: (id: number | string) => Promise<void>;
+  onSaveProduct?: (p: any) => Promise<void>;
+  onDeleteProduct?: (id: number | string) => Promise<void>;
+  onSaveSemiGood?: (sg: any) => Promise<void>;
+  onDeleteSemiGood?: (id: number | string) => Promise<void>;
+  onSaveRequisition?: (req: any) => Promise<void>;
+  onDeleteRequisition?: (id: number | string) => Promise<void>;
   onSavePurchaseOrder?: (po: any) => Promise<void>;
   setActivePage?: (page: string) => void;
 }
@@ -138,12 +137,23 @@ export default function Warehouse({
   productionOrders,
   bomRecipes = [],
   products = [],
+  suppliers = [],
+  semiGoods = [],
+  requisitions = [],
   grns = [],
   purchaseOrders = [],
   onSaveRawMaterial,
   onDeleteRawMaterial,
   onSaveInventoryPack,
   onDeleteInventoryPack,
+  onSaveSupplier,
+  onDeleteSupplier,
+  onSaveProduct,
+  onDeleteProduct,
+  onSaveSemiGood,
+  onDeleteSemiGood,
+  onSaveRequisition,
+  onDeleteRequisition,
   onSavePurchaseOrder,
   setActivePage
 }: WarehouseProps) {
@@ -194,6 +204,57 @@ export default function Warehouse({
     status: "active"
   });
 
+  // Supplier Modal state
+  const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+  const [supplierForm, setSupplierForm] = useState({
+    code: "",
+    name: "",
+    contact: "",
+    phone: "",
+    email: "",
+    address: "",
+    status: "active"
+  });
+
+  // Product / Finished Goods Modal state
+  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [productForm, setProductForm] = useState({
+    code: "",
+    name: "",
+    type: "Finished Goods",
+    version: "v1.0",
+    status: "active"
+  });
+
+  // Semi-Finished Goods Modal state
+  const [isSemiModalOpen, setIsSemiModalOpen] = useState(false);
+  const [editingSemi, setEditingSemi] = useState<SemiFinishedGood | null>(null);
+  const [semiForm, setSemiForm] = useState({
+    code: "",
+    name: "",
+    batch_no: "",
+    qty: 100,
+    unit: "KG.",
+    tank_no: "TANK-01",
+    mfg_date: new Date().toISOString().slice(0, 10),
+    status: "active"
+  });
+
+  // Requisition Modal state
+  const [isReqModalOpen, setIsReqModalOpen] = useState(false);
+  const [reqForm, setReqForm] = useState({
+    code: "",
+    date: new Date().toISOString().slice(0, 10),
+    department: "ฝ่ายผสมเคมี",
+    requester: "หัวหน้าฝ่ายผลิต",
+    purpose: "เบิกสำหรับสายการผลิต",
+    item_name: "Ethanol 96%",
+    qty: 50,
+    unit: "L."
+  });
+
   // Import Forms
   const [importType, setImportType] = useState<"raw" | "semi" | "fg" | "consumable">("raw");
   const [importForm, setImportForm] = useState({
@@ -205,60 +266,6 @@ export default function Warehouse({
     notes: ""
   });
 
-  // Semi-Finished Goods local state (starts empty - 0 mock data)
-  const [semiGoods, setSemiGoods] = useState<SemiFinishedGood[]>(() => {
-    try {
-      const saved = localStorage.getItem("factory_warehouse_semi");
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  const updateSemiGoods = (list: SemiFinishedGood[]) => {
-    setSemiGoods(list);
-    try {
-      localStorage.setItem("factory_warehouse_semi", JSON.stringify(list));
-    } catch {}
-  };
-
-  // Requisition Slips state (starts empty - 0 mock data)
-  const [requisitions, setRequisitions] = useState<RequisitionSlip[]>(() => {
-    try {
-      const saved = localStorage.getItem("factory_warehouse_requisitions");
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  const updateRequisitions = (list: RequisitionSlip[]) => {
-    setRequisitions(list);
-    try {
-      localStorage.setItem("factory_warehouse_requisitions", JSON.stringify(list));
-    } catch {}
-  };
-
-  // Finished goods deletion tracking
-  const [deletedFgIds, setDeletedFgIds] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem("factory_warehouse_deleted_fg");
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  // Custom added Finished Goods
-  const [customFgList, setCustomFgList] = useState<any[]>(() => {
-    try {
-      const saved = localStorage.getItem("factory_warehouse_custom_fg");
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
   // Calculator State
   const [selectedBomId, setSelectedBomId] = useState<number | "">("");
   const [calcGrams, setCalcGrams] = useState<number>(30);
@@ -266,36 +273,41 @@ export default function Warehouse({
   const [calcLoss, setCalcLoss] = useState<number>(3); // % loss
   const [isExportingCalc, setIsExportingCalc] = useState(false);
 
-  // Finished Goods stocks based on completed production orders
-  // Finished Goods stocks based on completed production orders + custom imports, minus deleted items
-  const baseFinishedGoods = productionOrders
-    .filter((po) => po.status === "done" || po.status === "completed")
-    .reduce((acc: any[], po) => {
-      const existing = acc.find((item) => item.product_id === po.product_id);
-      if (existing) {
-        existing.qty += po.quantity;
-      } else {
-        acc.push({
-          id: po.product_id,
-          product_id: po.product_id,
-          code: po.product_code || `FG-${String(po.product_id).padStart(3, "0")}`,
-          name: po.product_name,
-          qty: po.quantity,
-          unit: po.unit,
-          lot: `LOT-${po.code.split("-").pop() || "01"}`
-        });
-      }
-      return acc;
-    }, []);
+  // Finished Goods list (Products from Supabase + completed production orders)
+  const finishedGoods = products.map((prod) => {
+    const matchingOrders = productionOrders.filter(
+      (po) => po.product_id === prod.id && (po.status === "done" || po.status === "completed")
+    );
+    const completedQty = matchingOrders.reduce((sum, po) => sum + (Number(po.quantity) || 0), 0);
+    return {
+      id: prod.id,
+      product_id: prod.id,
+      code: prod.code,
+      name: prod.name,
+      type: prod.type,
+      version: prod.version,
+      status: prod.status,
+      qty: completedQty,
+      unit: "ชิ้น",
+      lot: matchingOrders[0]?.code ? `LOT-${matchingOrders[0].code.split("-").pop()}` : "LOT-STOCK"
+    };
+  });
 
-  const finishedGoods = [...baseFinishedGoods, ...customFgList].filter(
-    (fg) => !deletedFgIds.includes(String(fg.id))
-  );
+  // Display suppliers list (from Supabase suppliers table, or fallback to distinct names in rawMaterials)
+  const activeSuppliers: Supplier[] = suppliers.length > 0 
+    ? suppliers 
+    : Array.from(new Set(rawMaterials.map((rm) => rm.supplier_name || rm.supplier).filter(Boolean))).map((name, i) => ({
+        id: i + 1,
+        code: `SUP-${String(i + 1).padStart(3, "0")}`,
+        name: String(name),
+        contact: "ฝ่ายขายสารเคมี",
+        phone: "-",
+        email: "-",
+        address: "ประเทศไทย",
+        status: "active"
+      }));
 
-  // Unique list of suppliers
-  const supplierList = Array.from(
-    new Set(rawMaterials.map((rm) => rm.supplier_name || rm.supplier).filter(Boolean))
-  ) as string[];
+  const supplierList = Array.from(new Set(activeSuppliers.map(s => s.name)));
 
   // Shortage items
   const shortageMaterials = rawMaterials.filter((rm) => rm.stock_qty <= rm.min_stock);
@@ -634,7 +646,6 @@ export default function Warehouse({
         min_stock: Number(rawForm.min_stock) || 0,
         unit_price: Number(rawForm.unit_price) || 0,
         supplier_name: rawForm.supplier_name.trim(),
-        supplier: rawForm.supplier_name.trim(),
         image_url: rawForm.image_url.trim(),
         status: rawForm.status
       });
@@ -693,6 +704,182 @@ export default function Warehouse({
     setIsPackModalOpen(false);
   };
 
+  // Helper actions for Suppliers
+  const openSupplierModal = (sup: Supplier | null = null) => {
+    if (sup) {
+      setEditingSupplier(sup);
+      setSupplierForm({
+        code: sup.code || "",
+        name: sup.name,
+        contact: sup.contact || "",
+        phone: sup.phone || "",
+        email: sup.email || "",
+        address: sup.address || "",
+        status: sup.status || "active"
+      });
+    } else {
+      const nextNum = (suppliers?.length || 0) + 1;
+      setEditingSupplier(null);
+      setSupplierForm({
+        code: `SUP-${String(nextNum).padStart(3, "0")}`,
+        name: "",
+        contact: "",
+        phone: "",
+        email: "",
+        address: "",
+        status: "active"
+      });
+    }
+    setIsSupplierModalOpen(true);
+  };
+
+  const handleSaveSupplier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!supplierForm.name.trim()) return;
+    if (onSaveSupplier) {
+      await onSaveSupplier({
+        id: editingSupplier ? editingSupplier.id : 0,
+        code: supplierForm.code.trim() || `SUP-${Date.now().toString().slice(-4)}`,
+        name: supplierForm.name.trim(),
+        contact: supplierForm.contact.trim(),
+        phone: supplierForm.phone.trim(),
+        email: supplierForm.email.trim(),
+        address: supplierForm.address.trim(),
+        status: supplierForm.status
+      });
+      showWarehouseToast("✓ บันทึกข้อมูลผู้จำหน่ายสำเร็จแล้ว!");
+    }
+    setIsSupplierModalOpen(false);
+  };
+
+  // Helper actions for Finished Goods Products
+  const openProductModal = (prod: any | null = null) => {
+    if (prod) {
+      setEditingProduct(prod);
+      setProductForm({
+        code: prod.code || "",
+        name: prod.name || "",
+        type: prod.type || "Finished Goods",
+        version: prod.version || "v1.0",
+        status: prod.status || "active"
+      });
+    } else {
+      const nextNum = (products?.length || 0) + 1;
+      setEditingProduct(null);
+      setProductForm({
+        code: `P-${String(nextNum).padStart(3, "0")}`,
+        name: "",
+        type: "Finished Goods",
+        version: "v1.0",
+        status: "active"
+      });
+    }
+    setIsProductModalOpen(true);
+  };
+
+  const handleSaveProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!productForm.name.trim()) return;
+    if (onSaveProduct) {
+      await onSaveProduct({
+        id: editingProduct ? editingProduct.id : 0,
+        code: productForm.code.trim() || `P-${Date.now().toString().slice(-4)}`,
+        name: productForm.name.trim(),
+        type: productForm.type,
+        version: productForm.version,
+        status: productForm.status
+      });
+      showWarehouseToast("✓ บันทึกข้อมูลสินค้าสำเร็จรูปสำเร็จแล้ว!");
+    }
+    setIsProductModalOpen(false);
+  };
+
+  // Helper actions for Semi-Finished Goods
+  const openSemiModal = (sg: SemiFinishedGood | null = null) => {
+    if (sg) {
+      setEditingSemi(sg);
+      setSemiForm({
+        code: sg.code,
+        name: sg.name,
+        batch_no: sg.batch_no,
+        qty: sg.qty,
+        unit: sg.unit,
+        tank_no: sg.tank_no,
+        mfg_date: sg.mfg_date,
+        status: sg.status
+      });
+    } else {
+      const nextNum = (semiGoods?.length || 0) + 1;
+      setEditingSemi(null);
+      setSemiForm({
+        code: `SF-${String(nextNum).padStart(3, "0")}`,
+        name: "",
+        batch_no: `BATCH-${Date.now().toString().slice(-4)}`,
+        qty: 100,
+        unit: "KG.",
+        tank_no: "TANK-01",
+        mfg_date: new Date().toISOString().slice(0, 10),
+        status: "active"
+      });
+    }
+    setIsSemiModalOpen(true);
+  };
+
+  const handleSaveSemi = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!semiForm.name.trim()) return;
+    if (onSaveSemiGood) {
+      await onSaveSemiGood({
+        id: editingSemi ? editingSemi.id : 0,
+        code: semiForm.code.trim(),
+        name: semiForm.name.trim(),
+        batch_no: semiForm.batch_no.trim(),
+        qty: Number(semiForm.qty) || 0,
+        unit: semiForm.unit,
+        tank_no: semiForm.tank_no,
+        mfg_date: semiForm.mfg_date,
+        status: semiForm.status
+      });
+      showWarehouseToast("✓ บันทึกข้อมูลสินค้ากึ่งสำเร็จรูปเรียบร้อยแล้ว!");
+    }
+    setIsSemiModalOpen(false);
+  };
+
+  // Helper actions for Requisitions
+  const openReqModal = () => {
+    const nextNum = (requisitions?.length || 0) + 1;
+    setReqForm({
+      code: `REQ-2026-${String(nextNum).padStart(3, "0")}`,
+      date: new Date().toISOString().slice(0, 10),
+      department: "ฝ่ายผสมเคมี",
+      requester: "หัวหน้าฝ่ายผลิต",
+      purpose: "เบิกสำหรับสายการผลิต",
+      item_name: rawMaterials[0]?.name || "Ethanol 96%",
+      qty: 50,
+      unit: rawMaterials[0]?.unit || "L."
+    });
+    setIsReqModalOpen(true);
+  };
+
+  const handleSaveReq = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reqForm.item_name.trim()) return;
+    if (onSaveRequisition) {
+      await onSaveRequisition({
+        id: 0,
+        code: reqForm.code.trim(),
+        date: reqForm.date,
+        department: reqForm.department.trim(),
+        requester: reqForm.requester.trim(),
+        purpose: reqForm.purpose.trim(),
+        status: "approved",
+        items: [{ item_name: reqForm.item_name.trim(), qty: Number(reqForm.qty) || 1, unit: reqForm.unit }]
+      });
+      showWarehouseToast(`✓ บันทึกออกใบเบิก ${reqForm.code} สำเร็จแล้ว!`);
+    }
+    setIsReqModalOpen(false);
+  };
+
   const handleImportSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!importForm.qty || importForm.qty <= 0) {
@@ -704,8 +891,16 @@ export default function Warehouse({
       const target = rawMaterials.find((rm) => rm.id === Number(importForm.item_id));
       if (!target || !onSaveRawMaterial) return;
       await onSaveRawMaterial({
-        ...target,
-        stock_qty: target.stock_qty + Number(importForm.qty)
+        id: target.id,
+        code: target.code,
+        name: target.name,
+        unit: target.unit,
+        stock_qty: Number(target.stock_qty || 0) + Number(importForm.qty),
+        min_stock: target.min_stock,
+        unit_price: target.unit_price,
+        supplier_name: target.supplier_name || target.supplier || "",
+        status: target.status,
+        image_url: target.image_url || ""
       });
       showWarehouseToast(`✓ รับเข้าวัตถุดิบ ${target.name} จำนวน ${importForm.qty} ${target.unit} สำเร็จแล้ว!`);
       setActiveSection("raw");
@@ -713,17 +908,21 @@ export default function Warehouse({
       const target = inventoryPacks.find((ip) => ip.id === Number(importForm.item_id));
       if (!target || !onSaveInventoryPack) return;
       await onSaveInventoryPack({
-        ...target,
-        qty: target.qty + Number(importForm.qty)
+        id: target.id,
+        code: target.code,
+        name: target.name,
+        type: target.type,
+        qty: Number(target.qty || 0) + Number(importForm.qty),
+        unit: target.unit,
+        status: target.status
       });
       showWarehouseToast(`✓ รับเข้าวัสดุสิ้นเปลือง ${target.name} จำนวน ${importForm.qty} ${target.unit} สำเร็จแล้ว!`);
       setActiveSection("consumable");
     } else if (importType === "semi") {
-      const newSemiList = [
-        ...semiGoods,
-        {
-          id: Date.now(),
-          code: `SF-${String(semiGoods.length + 1).padStart(3, "0")}`,
+      if (onSaveSemiGood) {
+        await onSaveSemiGood({
+          id: 0,
+          code: `SF-${String((semiGoods?.length || 0) + 1).padStart(3, "0")}`,
           name: importForm.notes || "สารผสมกึ่งสำเร็จรูปล็อตใหม่",
           batch_no: importForm.lot_number || `BATCH-${Date.now().toString().slice(-4)}`,
           qty: Number(importForm.qty),
@@ -731,27 +930,22 @@ export default function Warehouse({
           tank_no: "TANK-HOLD",
           mfg_date: new Date().toISOString().slice(0, 10),
           status: "พักรอตรวจ QC"
-        }
-      ];
-      updateSemiGoods(newSemiList);
+        });
+      }
       showWarehouseToast(`✓ บันทึกรับเข้าสินค้ากึ่งสำเร็จรูป ${importForm.qty} KG. เรียบร้อยแล้ว!`);
       setActiveSection("semi");
     } else if (importType === "fg") {
-      const newFg = {
-        id: Date.now(),
-        product_id: Date.now(),
-        code: `FG-${Date.now().toString().slice(-4)}`,
-        name: importForm.notes || "สินค้าสำเร็จรูปรับเข้าใหม่",
-        qty: Number(importForm.qty),
-        unit: "ชิ้น",
-        lot: importForm.lot_number || `LOT-${Date.now().toString().slice(-4)}`
-      };
-      const updated = [...customFgList, newFg];
-      setCustomFgList(updated);
-      try {
-        localStorage.setItem("factory_warehouse_custom_fg", JSON.stringify(updated));
-      } catch {}
-      showWarehouseToast(`✓ บันทึกรับเข้าสินค้าสำเร็จรูป ${importForm.qty} ชิ้น เรียบร้อยแล้ว!`);
+      if (onSaveProduct) {
+        await onSaveProduct({
+          id: 0,
+          code: `P-FG-${Date.now().toString().slice(-4)}`,
+          name: importForm.notes || "สินค้าสำเร็จรูปรับเข้าใหม่",
+          type: "Finished Goods",
+          version: importForm.lot_number || `LOT-${Date.now().toString().slice(-4)}`,
+          status: "active"
+        });
+      }
+      showWarehouseToast(`✓ บันทึกรับเข้าสินค้าสำเร็จรูปเรียบร้อยแล้ว!`);
       setActiveSection("fg");
     }
   };
@@ -851,46 +1045,71 @@ export default function Warehouse({
       {/* ========================================================================= */}
       {/* 2. SUB-VIEW: ผู้จำหน่ายวัตถุดิบ                                             */}
       {/* ========================================================================= */}
+      {/* ========================================================================= */}
+      {/* 2. SUB-VIEW: ผู้จำหน่ายวัตถุดิบ (Suppliers)                                */}
+      {/* ========================================================================= */}
       {activeSection === "supplier" && (
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
             <div>
-              <h2 className="text-sm sm:text-base font-bold text-slate-800">รายชื่อผู้จำหน่ายวัตถุดิบ (Suppliers)</h2>
-              <p className="text-xs text-slate-500">ข้อมูลคู่ค้าและซัพพลายเออร์ส่งเคมีภัณฑ์</p>
+              <h2 className="text-sm sm:text-base font-bold text-slate-800">รายชื่อผู้จำหน่ายวัตถุดิบเคมีภัณฑ์ (Suppliers)</h2>
+              <p className="text-xs text-slate-500">ข้อมูลคู่ค้า ผู้ผลิต และซัพพลายเออร์ส่งเคมีดิบ บันทึกตรงสู่ฐานข้อมูล</p>
             </div>
             <button
-              onClick={() => openRawModal()}
+              onClick={() => openSupplierModal()}
               className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm"
             >
-              <Plus className="w-4 h-4" /> เพิ่มวัตถุดิบเคมีดิบ
+              <Plus className="w-4 h-4" /> เพิ่มผู้จำหน่ายใหม่
             </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {supplierList.map((sup, idx) => {
-              const itemsBySup = rawMaterials.filter((rm) => (rm.supplier_name || rm.supplier) === sup);
+            {activeSuppliers.map((sup) => {
+              const itemsBySup = rawMaterials.filter((rm) => (rm.supplier_name || rm.supplier) === sup.name);
               const totalSupVal = itemsBySup.reduce((sum, rm) => sum + rm.stock_qty * (rm.unit_price || 0), 0);
               return (
-                <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                <div key={sup.id} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 relative group">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-2">
                       <TruckIcon />
-                      <h3 className="font-bold text-slate-800 text-xs sm:text-sm">{sup}</h3>
+                      <div>
+                        <div className="text-[10px] font-mono font-bold text-blue-600">{sup.code}</div>
+                        <h3 className="font-bold text-slate-800 text-xs sm:text-sm">{sup.name}</h3>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => openSupplierModal(sup)}
+                        className="p-1 text-slate-400 hover:text-blue-600 rounded-lg cursor-pointer transition-colors"
+                        title="แก้ไขข้อมูลผู้จำหน่าย"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setDeleteTarget({ id: sup.id, name: sup.name, type: "supplier" })}
+                        className="p-1 text-slate-400 hover:text-red-600 rounded-lg cursor-pointer transition-colors"
+                        title="ลบผู้จำหน่าย"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
                   <div className="text-xs text-slate-600 space-y-1">
+                    {sup.contact && <p className="text-[11px]">ผู้ติดต่อ: <strong>{sup.contact}</strong></p>}
+                    {sup.phone && <p className="text-[11px]">เบอร์โทร: <strong>{sup.phone}</strong></p>}
+                    {sup.email && <p className="text-[11px]">อีเมล: <strong>{sup.email}</strong></p>}
                     <p>เคมีภัณฑ์ที่จำหน่าย: <strong className="text-blue-700">{itemsBySup.length} รายการ</strong></p>
                     <p>มูลค่าในสต็อกปัจจุบัน: <strong className="text-emerald-700">฿{totalSupVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></p>
                   </div>
                   <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
                     <button
                       onClick={() => {
-                        setSupplierFilter(sup);
+                        setSupplierFilter(sup.name);
                         setActiveSection("raw");
                       }}
                       className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
                     >
-                      ดูรายการสารเคมีจากรายนี้ →
+                      ดูรายการสารเคมีจากรายนี้ ({itemsBySup.length}) →
                     </button>
                   </div>
                 </div>
@@ -1179,15 +1398,23 @@ export default function Warehouse({
               <h2 className="text-sm sm:text-base font-bold text-slate-800">สินค้ากึ่งสำเร็จรูป (Semi-Finished / WIP Bulk)</h2>
               <p className="text-xs text-slate-500">สารผสมในถังพักรอกรอกบรรจุ หรือตรวจปล่อย QC</p>
             </div>
-            <button
-              onClick={() => {
-                setImportType("semi");
-                setActiveSection("import");
-              }}
-              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
-            >
-              <Plus className="w-4 h-4" /> นำเข้าสินค้ากึ่งสำเร็จ
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => openSemiModal()}
+                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Plus className="w-4 h-4" /> เพิ่มสินค้ากึ่งสำเร็จรูป
+              </button>
+              <button
+                onClick={() => {
+                  setImportType("semi");
+                  setActiveSection("import");
+                }}
+                className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <DatabaseIcon className="w-3.5 h-3.5" /> นำเข้าสินค้ากึ่งสำเร็จ
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto border border-slate-200 rounded-xl">
@@ -1223,13 +1450,22 @@ export default function Warehouse({
                       </span>
                     </td>
                     <td className="p-2.5 text-center">
-                      <button
-                        onClick={() => setDeleteTarget({ id: sg.id, name: `${sg.name} (${sg.batch_no})`, type: "semi" })}
-                        className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg cursor-pointer transition-colors active:scale-95"
-                        title="ลบสินค้ากึ่งสำเร็จรูป"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => openSemiModal(sg)}
+                          className="p-1 text-slate-500 hover:text-blue-600 cursor-pointer"
+                          title="แก้ไขสินค้ากึ่งสำเร็จรูป"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteTarget({ id: sg.id, name: `${sg.name} (${sg.batch_no})`, type: "semi" })}
+                          className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg cursor-pointer transition-colors active:scale-95"
+                          title="ลบสินค้ากึ่งสำเร็จรูป"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1256,15 +1492,23 @@ export default function Warehouse({
               <h2 className="text-sm sm:text-base font-bold text-slate-800">สินค้าสำเร็จรูป (Finished Goods - FG)</h2>
               <p className="text-xs text-slate-500">สินค้าบรรจุเสร็จพร้อมจัดส่งให้ลูกค้าหรือตัวแทน</p>
             </div>
-            <button
-              onClick={() => {
-                setImportType("fg");
-                setActiveSection("import");
-              }}
-              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
-            >
-              <Plus className="w-4 h-4" /> นำเข้าสินค้าสำเร็จ
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => openProductModal()}
+                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Plus className="w-4 h-4" /> เพิ่มสินค้าสำเร็จรูป
+              </button>
+              <button
+                onClick={() => {
+                  setImportType("fg");
+                  setActiveSection("import");
+                }}
+                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <DatabaseIcon className="w-3.5 h-3.5" /> นำเข้าสินค้าสำเร็จ
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto border border-slate-200 rounded-xl">
@@ -1277,6 +1521,7 @@ export default function Warehouse({
                   <th className="p-2.5 text-center">หน่วยนับ</th>
                   <th className="p-2.5 text-center">ล็อตผลิต</th>
                   <th className="p-2.5 text-center">สถานะ</th>
+                  <th className="p-2.5 text-center">จัดการ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1289,14 +1534,32 @@ export default function Warehouse({
                     <td className="p-2.5 text-center font-mono text-slate-600">{fg.lot}</td>
                     <td className="p-2.5 text-center">
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">
-                        พร้อมส่งมอบ
+                        {fg.status === "active" ? "พร้อมส่งมอบ" : fg.status}
                       </span>
+                    </td>
+                    <td className="p-2.5 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => openProductModal(fg)}
+                          className="p-1 text-slate-500 hover:text-blue-600 cursor-pointer"
+                          title="แก้ไขข้อมูลสินค้า"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteTarget({ id: fg.id, name: fg.name, type: "fg" })}
+                          className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg cursor-pointer transition-colors active:scale-95"
+                          title="ลบสินค้าสำเร็จรูป"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
                 {finishedGoods.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="p-6 text-center text-slate-400">
+                    <td colSpan={7} className="p-6 text-center text-slate-400">
                       ยังไม่มีรายการสินค้าสำเร็จรูปในคลัง
                     </td>
                   </tr>
@@ -1317,15 +1580,23 @@ export default function Warehouse({
               <h2 className="text-sm sm:text-base font-bold text-slate-800">วัสดุสิ้นเปลืองและบรรจุภัณฑ์ (Packaging & Supplies)</h2>
               <p className="text-xs text-slate-500">ขวด, ฝา, ฟอยล์, ฉลากสติกเกอร์, และอุปกรณ์สิ้นเปลือง</p>
             </div>
-            <button
-              onClick={() => {
-                setImportType("consumable");
-                setActiveSection("import");
-              }}
-              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
-            >
-              <Plus className="w-4 h-4" /> นำเข้าวัสดุสิ้นเปลือง
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => openPackModal()}
+                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Plus className="w-4 h-4" /> เพิ่มบรรจุภัณฑ์ใหม่
+              </button>
+              <button
+                onClick={() => {
+                  setImportType("consumable");
+                  setActiveSection("import");
+                }}
+                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <DatabaseIcon className="w-3.5 h-3.5" /> นำเข้าวัสดุสิ้นเปลือง
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto border border-slate-200 rounded-xl">
@@ -1359,13 +1630,22 @@ export default function Warehouse({
                       </span>
                     </td>
                     <td className="p-2.5 text-center">
-                      <button
-                        onClick={() => setDeleteTarget({ id: ip.id, name: ip.name, type: "pack" })}
-                        className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg cursor-pointer transition-colors active:scale-95"
-                        title="ลบรายการบรรจุภัณฑ์"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => openPackModal(ip)}
+                          className="p-1 text-slate-500 hover:text-blue-600 cursor-pointer"
+                          title="แก้ไขบรรจุภัณฑ์"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteTarget({ id: ip.id, name: ip.name, type: "pack" })}
+                          className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg cursor-pointer transition-colors active:scale-95"
+                          title="ลบรายการบรรจุภัณฑ์"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -2157,7 +2437,7 @@ export default function Warehouse({
                         total_amount: poItems.reduce((sum, item) => sum + item.subtotal, 0),
                         items: poItems
                       });
-                      alert("✓ สร้างใบขอสั่งซื้อ (PO) สำหรับเคมีภัณฑ์ที่ขาดเรียบร้อยแล้ว!");
+                      showWarehouseToast("✓ สร้างใบขอสั่งซื้อ (PO) สำหรับเคมีภัณฑ์ที่ขาดเรียบร้อยแล้ว!");
                       if (setActivePage) setActivePage("purchase");
                     }
                   }}
@@ -2220,23 +2500,7 @@ export default function Warehouse({
               <p className="text-xs text-slate-500">เอกสารการขอเบิกวัตถุดิบเคมีและบรรจุภัณฑ์ไปใช้ในสายการผลิต</p>
             </div>
             <button
-              onClick={() => {
-                const newCode = `REQ-2026-${String(requisitions.length + 1).padStart(3, "0")}`;
-                setRequisitions([
-                  ...requisitions,
-                  {
-                    id: Date.now(),
-                    code: newCode,
-                    date: new Date().toISOString().slice(0, 10),
-                    department: "ฝ่ายผสมเคมี",
-                    requester: "หัวหน้าฝ่ายผลิต",
-                    purpose: "เบิกสำหรับใบสั่งผลิตใหม่",
-                    status: "approved",
-                    items: [{ item_name: "Ethanol 96%", qty: 50, unit: "L." }]
-                  }
-                ]);
-                alert(`✓ ออกใบเบิก ${newCode} สำเร็จแล้ว!`);
-              }}
+              onClick={() => openReqModal()}
               className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
             >
               <Plus className="w-4 h-4" /> สร้างใบเบิกใหม่
@@ -2257,11 +2521,7 @@ export default function Warehouse({
                   <div className="flex items-center gap-3">
                     <span className="text-xs text-slate-600 font-medium">แผนก: <strong>{req.department}</strong> (ผู้เบิก: {req.requester})</span>
                     <button
-                      onClick={() => {
-                        if (confirm(`คุณต้องการลบใบเบิกพัสดุ ${req.code} ใช่หรือไม่?`)) {
-                          setRequisitions(requisitions.filter((r) => r.id !== req.id));
-                        }
-                      }}
+                      onClick={() => setDeleteTarget({ id: req.id, name: req.code, type: "req" })}
                       className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg cursor-pointer transition-colors"
                       title="ลบใบเบิก"
                     >
@@ -2418,6 +2678,589 @@ export default function Warehouse({
         </div>
       )}
 
+      {/* Packaging / Consumables Modal */}
+      {isPackModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50">
+              <h3 className="text-sm font-bold text-slate-800">
+                {editingPack ? "แก้ไขข้อมูลบรรจุภัณฑ์/วัสดุสิ้นเปลือง" : "เพิ่มบรรจุภัณฑ์/วัสดุสิ้นเปลืองใหม่"}
+              </h3>
+              <button onClick={() => setIsPackModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSavePack} className="p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">รหัสพัสดุ *</label>
+                  <input
+                    type="text"
+                    required
+                    value={packForm.code}
+                    onChange={(e) => setPackForm({ ...packForm, code: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-bold font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">หมวดหมู่ *</label>
+                  <select
+                    value={packForm.type}
+                    onChange={(e) => setPackForm({ ...packForm, type: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl"
+                  >
+                    <option value="ขวด">ขวด</option>
+                    <option value="ฝา">ฝา</option>
+                    <option value="ฟอยล์">ฟอยล์</option>
+                    <option value="ฉลาก">ฉลาก</option>
+                    <option value="กล่อง">กล่อง</option>
+                    <option value="อุปกรณ์">อุปกรณ์</option>
+                    <option value="อื่นๆ">อื่นๆ</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">ชื่อรายการบรรจุภัณฑ์ *</label>
+                <input
+                  type="text"
+                  required
+                  value={packForm.name}
+                  onChange={(e) => setPackForm({ ...packForm, name: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-bold"
+                  placeholder="เช่น ขวดแก้วดรอปเปอร์ใส 30ml"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">จำนวนคงคลัง *</label>
+                  <input
+                    type="number"
+                    value={packForm.qty}
+                    onChange={(e) => setPackForm({ ...packForm, qty: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-bold font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">หน่วยนับ *</label>
+                  <input
+                    type="text"
+                    required
+                    value={packForm.unit}
+                    onChange={(e) => setPackForm({ ...packForm, unit: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl"
+                    placeholder="เช่น ชิ้น, ใบ, ม้วน"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                {editingPack ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = { id: editingPack.id, name: editingPack.name, type: "pack" as const };
+                      setIsPackModalOpen(false);
+                      setDeleteTarget(target);
+                    }}
+                    className="px-3.5 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> ลบรายการนี้
+                  </button>
+                ) : (
+                  <div />
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsPackModalOpen(false)}
+                    className="px-4 py-2 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl cursor-pointer hover:bg-slate-200 transition-colors"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer transition-colors"
+                  >
+                    บันทึก
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Supplier Modal */}
+      {isSupplierModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50">
+              <h3 className="text-sm font-bold text-slate-800">
+                {editingSupplier ? "แก้ไขข้อมูลผู้จำหน่าย (Supplier)" : "เพิ่มผู้จำหน่ายใหม่ (Supplier)"}
+              </h3>
+              <button onClick={() => setIsSupplierModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveSupplier} className="p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">รหัสผู้จำหน่าย</label>
+                  <input
+                    type="text"
+                    value={supplierForm.code}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, code: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-bold font-mono"
+                    placeholder="SUP-001"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">ชื่อผู้ติดต่อ</label>
+                  <input
+                    type="text"
+                    value={supplierForm.contact}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, contact: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl"
+                    placeholder="คุณสมชาย"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">ชื่อบริษัท / ร้านค้าผู้จำหน่าย *</label>
+                <input
+                  type="text"
+                  required
+                  value={supplierForm.name}
+                  onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-bold"
+                  placeholder="เช่น บริษัท โกลบอลเคมีคอล ซัพพลาย จำกัด"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">เบอร์โทรศัพท์</label>
+                  <input
+                    type="text"
+                    value={supplierForm.phone}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-mono"
+                    placeholder="02-123-4567"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">อีเมล</label>
+                  <input
+                    type="email"
+                    value={supplierForm.email}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, email: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-mono"
+                    placeholder="contact@supplier.com"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">ที่อยู่ / ข้อมูลติดต่อเพิ่มเติม</label>
+                <textarea
+                  rows={2}
+                  value={supplierForm.address}
+                  onChange={(e) => setSupplierForm({ ...supplierForm, address: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl"
+                  placeholder="เลขที่ ถนน แขวง/ตำบล เขต/อำเภอ จังหวัด"
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                {editingSupplier ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = { id: editingSupplier.id, name: editingSupplier.name, type: "supplier" as const };
+                      setIsSupplierModalOpen(false);
+                      setDeleteTarget(target);
+                    }}
+                    className="px-3.5 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> ลบผู้จำหน่ายนี้
+                  </button>
+                ) : (
+                  <div />
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsSupplierModalOpen(false)}
+                    className="px-4 py-2 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl cursor-pointer hover:bg-slate-200 transition-colors"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer transition-colors"
+                  >
+                    บันทึก
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Finished Goods / Product Modal */}
+      {isProductModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50">
+              <h3 className="text-sm font-bold text-slate-800">
+                {editingProduct ? "แก้ไขสินค้าสำเร็จรูป" : "เพิ่มสินค้าสำเร็จรูปใหม่"}
+              </h3>
+              <button onClick={() => setIsProductModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveProduct} className="p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">รหัสสินค้า *</label>
+                  <input
+                    type="text"
+                    required
+                    value={productForm.code}
+                    onChange={(e) => setProductForm({ ...productForm, code: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-bold font-mono"
+                    placeholder="P-001"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">เวอร์ชันสูตร</label>
+                  <input
+                    type="text"
+                    value={productForm.version}
+                    onChange={(e) => setProductForm({ ...productForm, version: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-mono"
+                    placeholder="v1.0"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">ชื่อสินค้าสำเร็จรูป *</label>
+                <input
+                  type="text"
+                  required
+                  value={productForm.name}
+                  onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-bold"
+                  placeholder="เช่น ไฮยาลูรอน บูสเตอร์ เซรั่ม 30ml"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">ประเภทสินค้า</label>
+                <input
+                  type="text"
+                  value={productForm.type}
+                  onChange={(e) => setProductForm({ ...productForm, type: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl"
+                  placeholder="Finished Goods"
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                {editingProduct ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = { id: editingProduct.id, name: editingProduct.name, type: "fg" as const };
+                      setIsProductModalOpen(false);
+                      setDeleteTarget(target);
+                    }}
+                    className="px-3.5 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> ลบสินค้านี้
+                  </button>
+                ) : (
+                  <div />
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsProductModalOpen(false)}
+                    className="px-4 py-2 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl cursor-pointer hover:bg-slate-200 transition-colors"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer transition-colors"
+                  >
+                    บันทึก
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Semi-Finished Goods Modal */}
+      {isSemiModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50">
+              <h3 className="text-sm font-bold text-slate-800">
+                {editingSemi ? "แก้ไขสินค้ากึ่งสำเร็จรูป" : "เพิ่มสินค้ากึ่งสำเร็จรูปใหม่"}
+              </h3>
+              <button onClick={() => setIsSemiModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveSemi} className="p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">รหัสสารกึ่งสำเร็จ *</label>
+                  <input
+                    type="text"
+                    required
+                    value={semiForm.code}
+                    onChange={(e) => setSemiForm({ ...semiForm, code: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-bold font-mono"
+                    placeholder="SF-001"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">เลขแบทช์ผลิต (Batch No.)</label>
+                  <input
+                    type="text"
+                    value={semiForm.batch_no}
+                    onChange={(e) => setSemiForm({ ...semiForm, batch_no: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-mono"
+                    placeholder="BATCH-2026-001"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">ชื่อสารกึ่งสำเร็จรูป *</label>
+                <input
+                  type="text"
+                  required
+                  value={semiForm.name}
+                  onChange={(e) => setSemiForm({ ...semiForm, name: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-bold"
+                  placeholder="เช่น สารผสมเบสเซรั่มไฮยาเข้มข้น"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">ปริมาณคงคลัง *</label>
+                  <input
+                    type="number"
+                    value={semiForm.qty}
+                    onChange={(e) => setSemiForm({ ...semiForm, qty: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-bold font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">หน่วยนับ *</label>
+                  <select
+                    value={semiForm.unit}
+                    onChange={(e) => setSemiForm({ ...semiForm, unit: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-bold"
+                  >
+                    <option value="KG.">KG.</option>
+                    <option value="L.">L.</option>
+                    <option value="G.">G.</option>
+                    <option value="ML.">ML.</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">ถังเก็บ (Tank)</label>
+                  <input
+                    type="text"
+                    value={semiForm.tank_no}
+                    onChange={(e) => setSemiForm({ ...semiForm, tank_no: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-mono"
+                    placeholder="TANK-01"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                {editingSemi ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = { id: editingSemi.id, name: editingSemi.name, type: "semi" as const };
+                      setIsSemiModalOpen(false);
+                      setDeleteTarget(target);
+                    }}
+                    className="px-3.5 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> ลบรายการนี้
+                  </button>
+                ) : (
+                  <div />
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsSemiModalOpen(false)}
+                    className="px-4 py-2 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl cursor-pointer hover:bg-slate-200 transition-colors"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer transition-colors"
+                  >
+                    บันทึก
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Requisition Slip Modal */}
+      {isReqModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50">
+              <h3 className="text-sm font-bold text-slate-800">
+                สร้างใบเบิกพัสดุและวัตถุดิบ (Requisition Slip)
+              </h3>
+              <button onClick={() => setIsReqModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveReq} className="p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">เลขที่ใบเบิก *</label>
+                  <input
+                    type="text"
+                    required
+                    value={reqForm.code}
+                    onChange={(e) => setReqForm({ ...reqForm, code: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-bold font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">วันที่ *</label>
+                  <input
+                    type="date"
+                    required
+                    value={reqForm.date}
+                    onChange={(e) => setReqForm({ ...reqForm, date: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">แผนกที่ขอเบิก *</label>
+                  <input
+                    type="text"
+                    required
+                    value={reqForm.department}
+                    onChange={(e) => setReqForm({ ...reqForm, department: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl"
+                    placeholder="เช่น ฝ่ายผสมเคมี"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">ผู้ขอเบิก *</label>
+                  <input
+                    type="text"
+                    required
+                    value={reqForm.requester}
+                    onChange={(e) => setReqForm({ ...reqForm, requester: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl"
+                    placeholder="เช่น หัวหน้าฝ่ายผลิต"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">วัตถุประสงค์ในการเบิก</label>
+                <input
+                  type="text"
+                  value={reqForm.purpose}
+                  onChange={(e) => setReqForm({ ...reqForm, purpose: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl"
+                  placeholder="เช่น เบิกสำหรับผลิตล็อต LOT-2026-01"
+                />
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                <div className="text-xs font-bold text-slate-700">รายการพัสดุ/วัตถุดิบที่ขอเบิก</div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">ชื่อรายการ *</label>
+                  <input
+                    type="text"
+                    required
+                    value={reqForm.item_name}
+                    onChange={(e) => setReqForm({ ...reqForm, item_name: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-xl font-bold"
+                    placeholder="เช่น Ethanol 96% หรือ ขวด 30ml"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">จำนวน *</label>
+                    <input
+                      type="number"
+                      required
+                      min={0.1}
+                      step="any"
+                      value={reqForm.qty}
+                      onChange={(e) => setReqForm({ ...reqForm, qty: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-xl font-bold font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">หน่วยนับ *</label>
+                    <input
+                      type="text"
+                      required
+                      value={reqForm.unit}
+                      onChange={(e) => setReqForm({ ...reqForm, unit: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-xl font-bold"
+                      placeholder="L. หรือ ชิ้น หรือ KG."
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsReqModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl cursor-pointer hover:bg-slate-200 transition-colors"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer transition-colors"
+                >
+                  บันทึกออกใบเบิก
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Floating Action / Chat Button at bottom right */}
       {!activeSection && (
         <button
@@ -2443,13 +3286,19 @@ export default function Warehouse({
                     ? "ยืนยันการลบวัตถุดิบเคมีดิบ"
                     : deleteTarget.type === "pack"
                     ? "ยืนยันการลบรายการบรรจุภัณฑ์"
-                    : "ยืนยันการลบสินค้ากึ่งสำเร็จรูป"}
+                    : deleteTarget.type === "supplier"
+                    ? "ยืนยันการลบข้อมูลผู้จำหน่าย"
+                    : deleteTarget.type === "fg"
+                    ? "ยืนยันการลบสินค้าสำเร็จรูป"
+                    : deleteTarget.type === "semi"
+                    ? "ยืนยันการลบสินค้ากึ่งสำเร็จรูป"
+                    : "ยืนยันการลบใบเบิกพัสดุ"}
                 </h3>
-                <p className="text-xs text-slate-500">การลบนี้จะนำข้อมูลออกจากระบบคลังสินค้าถาวร</p>
+                <p className="text-xs text-slate-500">การลบนี้จะนำข้อมูลออกจากฐานข้อมูลถาวร</p>
               </div>
             </div>
             <p className="text-xs text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-200 leading-relaxed">
-              คุณแน่ใจหรือไม่ว่าต้องการลบ <strong className="text-red-600">"{deleteTarget.name}"</strong> ออกจากระบบคลังสินค้า 100%?
+              คุณแน่ใจหรือไม่ว่าต้องการลบ <strong className="text-red-600">"{deleteTarget.name}"</strong> ออกจากฐานข้อมูล 100%?
             </p>
             <div className="flex justify-end gap-2.5 pt-1">
               <button
@@ -2464,17 +3313,28 @@ export default function Warehouse({
                 onClick={async () => {
                   const { id, type } = deleteTarget;
                   setDeleteTarget(null);
-                  if (type === "raw" && onDeleteRawMaterial) {
-                    await onDeleteRawMaterial(id);
-                  } else if (type === "pack" && onDeleteInventoryPack) {
-                    await onDeleteInventoryPack(id);
-                  } else if (type === "semi") {
-                    setSemiGoods((prev) => prev.filter((item) => item.id !== id));
+                  try {
+                    if (type === "raw" && onDeleteRawMaterial) {
+                      await onDeleteRawMaterial(id);
+                    } else if (type === "pack" && onDeleteInventoryPack) {
+                      await onDeleteInventoryPack(id);
+                    } else if (type === "supplier" && onDeleteSupplier) {
+                      await onDeleteSupplier(id);
+                    } else if (type === "fg" && onDeleteProduct) {
+                      await onDeleteProduct(id);
+                    } else if (type === "semi" && onDeleteSemiGood) {
+                      await onDeleteSemiGood(id);
+                    } else if (type === "req" && onDeleteRequisition) {
+                      await onDeleteRequisition(id);
+                    }
+                    showWarehouseToast("✓ ลบรายการออกจากฐานข้อมูลเรียบร้อยแล้ว!");
+                  } catch (err: any) {
+                    showWarehouseToast(err?.message || "เกิดข้อผิดพลาดในการลบ", "error");
                   }
                 }}
                 className="px-5 py-2 bg-red-600 hover:bg-red-700 active:scale-95 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all shadow-md shadow-red-600/20 cursor-pointer"
               >
-                <Trash2 className="w-3.5 h-3.5" /> ยืนยันลบออกจากคลัง
+                <Trash2 className="w-3.5 h-3.5" /> ยืนยันลบออกจากฐานข้อมูล
               </button>
             </div>
           </div>
