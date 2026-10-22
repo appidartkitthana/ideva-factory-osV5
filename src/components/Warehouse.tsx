@@ -205,38 +205,13 @@ export default function Warehouse({
     notes: ""
   });
 
-  // Semi-Finished Goods local state with localStorage persistence
-  const defaultSemiGoods: SemiFinishedGood[] = [
-    {
-      id: 1,
-      code: "SF-001",
-      name: "เบสสบู่เหลวเข้มข้น (Concentrated Liquid Soap Base)",
-      batch_no: "BATCH-SF24-001",
-      qty: 450,
-      unit: "KG.",
-      tank_no: "TANK-A1",
-      mfg_date: "2026-06-15",
-      status: "พร้อมบรรจุ"
-    },
-    {
-      id: 2,
-      code: "SF-002",
-      name: "เซรั่มไนอะซินาไมด์กึ่งสำเร็จรูป (Serum Bulk WIP)",
-      batch_no: "BATCH-SF24-002",
-      qty: 280,
-      unit: "KG.",
-      tank_no: "TANK-B2",
-      mfg_date: "2026-06-18",
-      status: "รอตรวจสอบ QC"
-    }
-  ];
-
+  // Semi-Finished Goods local state (starts empty - 0 mock data)
   const [semiGoods, setSemiGoods] = useState<SemiFinishedGood[]>(() => {
     try {
       const saved = localStorage.getItem("factory_warehouse_semi");
-      return saved ? JSON.parse(saved) : defaultSemiGoods;
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return defaultSemiGoods;
+      return [];
     }
   });
 
@@ -247,42 +222,13 @@ export default function Warehouse({
     } catch {}
   };
 
-  // Requisition Slips state with localStorage persistence
-  const defaultRequisitions: RequisitionSlip[] = [
-    {
-      id: 1,
-      code: "REQ-2026-001",
-      date: "2026-06-20",
-      department: "ฝ่ายผลิต (สายการผลิต A)",
-      requester: "นายสมศักดิ์ ช่างผสม",
-      purpose: "เบิกสารผสมล๊อต LOT-2026-01",
-      status: "approved",
-      items: [
-        { item_name: "Ethanol 96%", qty: 100, unit: "L." },
-        { item_name: "Glycerin USP", qty: 10, unit: "L." }
-      ]
-    },
-    {
-      id: 2,
-      code: "REQ-2026-002",
-      date: "2026-06-22",
-      department: "ฝ่ายบรรจุหีบห่อ",
-      requester: "นางสาวพิมพา ฝ่ายบรรจุ",
-      purpose: "เบิกขวดและฝาสำหรับคำสั่งซื้อ P-001",
-      status: "approved",
-      items: [
-        { item_name: "ขวด HDPE ขนาด 1 ลิตร", qty: 500, unit: "ชิ้น" },
-        { item_name: "ฝาสกรูพลาสติก สีขาว", qty: 500, unit: "ชิ้น" }
-      ]
-    }
-  ];
-
+  // Requisition Slips state (starts empty - 0 mock data)
   const [requisitions, setRequisitions] = useState<RequisitionSlip[]>(() => {
     try {
       const saved = localStorage.getItem("factory_warehouse_requisitions");
-      return saved ? JSON.parse(saved) : defaultRequisitions;
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return defaultRequisitions;
+      return [];
     }
   });
 

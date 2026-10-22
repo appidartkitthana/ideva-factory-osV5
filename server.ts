@@ -1857,15 +1857,25 @@ async function startServer() {
       // 1. Delete in Supabase if active
       if (useSupabase && supabase) {
         try {
-          await supabase.from("bom_items").delete().neq("id", 0).catch(() => {});
-          await supabase.from("purchase_order_items").delete().neq("id", 0).catch(() => {});
           const tables = [
-            "projects", "customers", "products", "raw_materials",
-            "bom_recipes", "production_orders", "packing_orders",
-            "purchase_orders", "grns", "prechecks", "inventory_pack", "purchase_packs"
+            "bom_items",
+            "purchase_order_items",
+            "grns",
+            "packing_orders",
+            "production_orders",
+            "purchase_packs",
+            "purchase_orders",
+            "prechecks",
+            "bom_recipes",
+            "inventory_pack",
+            "projects",
+            "raw_materials",
+            "products",
+            "customers",
+            "suppliers"
           ];
           for (const tbl of tables) {
-            await supabase.from(tbl).delete().neq("id", 0).catch(() => {});
+            await supabase.from(tbl).delete().gt("id", -1).catch(() => {});
           }
         } catch (supaErr) {
           console.warn("Supabase clear warning:", supaErr);
