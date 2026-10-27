@@ -18,7 +18,8 @@ import {
   getSupabaseConfig,
   updateSupabaseConfig,
   processSyncQueue,
-  getSyncQueue
+  getSyncQueue,
+  seedDatabaseTables
 } from "./lib/supabaseClient";
 import { 
   PrecheckPage, 
@@ -53,7 +54,8 @@ import {
   RefreshCw, 
   Sliders, 
   ChevronDown, 
-  ChevronUp 
+  ChevronUp,
+  Sparkles
 } from "lucide-react";
 
 const THEMES = [
@@ -231,6 +233,23 @@ export default function App() {
       await loadAllData();
     } else {
       showToast("ยังไม่สามารถเชื่อมต่อได้ กรุณาตรวจสอบ Project URL และ Anon Key", "error");
+    }
+  };
+
+  const [isSeedingData, setIsSeedingData] = useState(false);
+
+  // One-click seed all sample data into connected Supabase
+  const handleSeedDataToSupabase = async () => {
+    setIsSeedingData(true);
+    showToast("กำลังโหลดและบันทึกชุดข้อมูลโรงงานเข้า Supabase ครบทั้ง 17 ตาราง...", "success");
+    try {
+      const res = await seedDatabaseTables();
+      await loadAllData();
+      showToast("✓ " + res.message, "success");
+    } catch (e: any) {
+      showToast("เกิดข้อผิดพลาดในการโหลดข้อมูล: " + (e?.message || e), "error");
+    } finally {
+      setIsSeedingData(false);
     }
   };
 
@@ -900,6 +919,42 @@ export default function App() {
           </div>
         )}
 
+        {/* Detection banner for Empty Supabase Database */}
+        {customers.length === 0 && rawMaterials.length === 0 && projects.length === 0 && (
+          <div className="bg-gradient-to-r from-blue-900 via-indigo-950 to-slate-900 border-b border-blue-400/30 text-white px-4 md:px-6 py-3 shadow-md animate-in fade-in">
+            <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <div className="p-1.5 bg-blue-500/20 text-blue-300 rounded-lg shrink-0 mt-0.5 border border-blue-400/20">
+                  <Sparkles className="w-4 h-4 text-amber-300" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-xs text-white">
+                      ฐานข้อมูล Supabase เชื่อมต่อแล้ว แต่ตารางส่วนใหญ่ยังว่างเปล่า (พบเพียง {customers.length + products.length + suppliers.length} เรคคอร์ด)
+                    </span>
+                    <span className="bg-blue-500/20 text-blue-200 text-[10px] font-mono px-2 py-0.5 rounded-full border border-blue-400/30">
+                      17 Tables Ready
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 mt-0.5">
+                    กดปุ่มนี้เพื่อบันทึกชุดข้อมูลโรงงานตั้งต้น (ลูกค้า, สต็อกเคมีภัณฑ์, สูตร BOM, โปรเจค OEM, ใบสั่งผลิต) ลง Supabase ทันที ทุกเครื่องจะดึงข้อมูลชุดเดียวกันได้ครบ 100%!
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSeedDataToSupabase}
+                disabled={isSeedingData}
+                className="shrink-0 px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold shadow-md flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSeedingData ? "animate-spin" : ""}`} />
+                <span>{isSeedingData ? "กำลังบันทึกลง Supabase..." : "📥 โหลดข้อมูลโรงงานตั้งต้นเข้าสู่ Supabase ทันที"}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Content Viewport */}
         <main className="flex-1 p-4 md:p-6 overflow-y-auto max-w-7xl w-full mx-auto">
           {renderActivePageContent()}
@@ -920,7 +975,11 @@ export default function App() {
           purchaseOrders: purchaseOrders.length,
           grns: grns.length,
           rawMaterials: rawMaterials.length,
-          inventoryPacks: inventoryPacks.length
+          inventoryPacks: inventoryPacks.length,
+          suppliers: suppliers.length,
+          products: products.length,
+          semiGoods: semiGoods.length,
+          requisitions: requisitions.length
         }}
         onRefreshData={loadAllData}
       />

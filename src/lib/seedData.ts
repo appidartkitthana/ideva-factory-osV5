@@ -375,5 +375,41 @@ export const SAMPLE_SEED_DATA = {
       category: "เคมีภัณฑ์ยานยนต์",
       created_at: "2024-02-10 11:30:00"
     }
+  ],
+  semi_finished_goods: [
+    {
+      id: 1,
+      code: "SF-001",
+      name: "เบสสบู่กึ่งสำเร็จรูปสูตรเข้มข้น (Bulk WIP)",
+      batch_no: "BATCH-2601",
+      qty: 250,
+      unit: "KG.",
+      tank_no: "TANK-01",
+      mfg_date: "2026-05-10",
+      status: "active"
+    },
+    {
+      id: 2,
+      code: "SF-002",
+      name: "สารละลายเข้มข้น Pre-mix Glaze Coating",
+      batch_no: "BATCH-2602",
+      qty: 120,
+      unit: "L.",
+      tank_no: "TANK-02",
+      mfg_date: "2026-05-12",
+      status: "active"
+    }
+  ],
+  requisitions: [
+    {
+      id: 1,
+      code: "REQ-2026-001",
+      date: "2026-05-15",
+      department: "ฝ่ายผสมเคมี",
+      requester: "หัวหน้าฝ่ายผลิต",
+      purpose: "เบิกสำหรับสายการผลิตสบู่ก้อนมังคุด",
+      status: "approved",
+      items: [{ item_name: "Ethanol 96%", qty: 50, unit: "L." }]
+    }
   ]
 };

@@ -1,5 +1,6 @@
-import React from "react";
-import { Bell, Menu, Calendar, Clock, AlertTriangle, XCircle, CheckCircle, Info, Database, Lock } from "lucide-react";
+import React, { useState } from "react";
+import { Bell, Menu, Calendar, Clock, AlertTriangle, XCircle, CheckCircle, Info, Database, Lock, Share2, CheckCircle2 } from "lucide-react";
+import { getShareableDatabaseLink } from "../lib/supabaseClient";
 
 interface NotificationItem {
   id: string;
@@ -44,9 +45,10 @@ export default function Topbar({
     settings: "ตั้งค่าระบบ & จัดการฐานข้อมูล"
   };
 
-  const [time, setTime] = React.useState("");
-  const [date, setDate] = React.useState("");
-  const [isNotificationsOpen, setIsNotificationsOpen] = React.useState(false);
+  const [time, setTime] = useState("");
+  const [date, setDate] = useState("");
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // Close notifications dropdown on click outside
   const dropdownRef = React.useRef<HTMLDivElement>(null);
@@ -110,6 +112,30 @@ export default function Topbar({
           <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-medium flex items-center gap-1">
             <Lock className="w-2.5 h-2.5" /> ระบบป้องกัน
           </span>
+        </button>
+
+        {/* 1-Click Multi-Device Universal Sync Link */}
+        <button
+          onClick={() => {
+            const link = getShareableDatabaseLink();
+            navigator.clipboard.writeText(link);
+            setCopiedLink(true);
+            setTimeout(() => setCopiedLink(false), 2500);
+          }}
+          className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 rounded-xl text-xs font-bold border border-slate-300 transition-all active:scale-95 cursor-pointer"
+          title="คัดลอกลิงก์แชร์เชื่อมต่อทุกอุปกรณ์ (เปิดที่ไหนเห็นข้อมูลชุดเดียวกันทันที 100%)"
+        >
+          {copiedLink ? (
+            <>
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="text-emerald-700">คัดลอกลิงก์แล้ว!</span>
+            </>
+          ) : (
+            <>
+              <Share2 className="w-3.5 h-3.5 text-blue-600" />
+              <span>แชร์ลิงก์ซิงค์</span>
+            </>
+          )}
         </button>
 
         {dbStatus ? (

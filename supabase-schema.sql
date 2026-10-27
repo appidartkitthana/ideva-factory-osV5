@@ -464,7 +464,40 @@ INSERT INTO projects (id, title, project_type, customer, customer_status, owner,
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================================
--- 17. RE-SYNC PRIMARY KEY AUTO-INCREMENT SEQUENCES
+-- 17. SAFE COLUMN MIGRATION (รับประกันครบทุกตารางและทุกคอลัมน์ 100%)
+-- ============================================================================
+ALTER TABLE products ADD COLUMN IF NOT EXISTS category VARCHAR(100);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS unit_price DECIMAL(12,2) DEFAULT 0.00;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_qty DECIMAL(12,4) DEFAULT 0.0000;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS min_stock DECIMAL(12,4) DEFAULT 0.0000;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE raw_materials ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE bom_items ADD COLUMN IF NOT EXISTS unit_price DECIMAL(14,2) DEFAULT 0.00;
+
+ALTER TABLE grns ADD COLUMN IF NOT EXISTS unit VARCHAR(50) DEFAULT 'KG.';
+ALTER TABLE grns ADD COLUMN IF NOT EXISTS unit_price DECIMAL(14,2) DEFAULT 0.00;
+ALTER TABLE grns ADD COLUMN IF NOT EXISTS supplier_name VARCHAR(255);
+ALTER TABLE grns ADD COLUMN IF NOT EXISTS po_number VARCHAR(100);
+ALTER TABLE grns ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE prechecks ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE prechecks ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE inventory_pack ADD COLUMN IF NOT EXISTS supplier_name VARCHAR(255);
+ALTER TABLE inventory_pack ADD COLUMN IF NOT EXISTS unit_price DECIMAL(14,2) DEFAULT 0.00;
+ALTER TABLE inventory_pack ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE inventory_pack ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE purchase_packs ADD COLUMN IF NOT EXISTS unit VARCHAR(50) DEFAULT 'ชิ้น';
+ALTER TABLE purchase_packs ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE packing_orders ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+-- ============================================================================
+-- 18. RE-SYNC PRIMARY KEY AUTO-INCREMENT SEQUENCES
 -- ============================================================================
 SELECT setval(pg_get_serial_sequence('suppliers', 'id'), coalesce(max(id), 1)) FROM suppliers;
 SELECT setval(pg_get_serial_sequence('customers', 'id'), coalesce(max(id), 1)) FROM customers;
@@ -481,6 +514,8 @@ SELECT setval(pg_get_serial_sequence('prechecks', 'id'), coalesce(max(id), 1)) F
 SELECT setval(pg_get_serial_sequence('inventory_pack', 'id'), coalesce(max(id), 1)) FROM inventory_pack;
 SELECT setval(pg_get_serial_sequence('purchase_packs', 'id'), coalesce(max(id), 1)) FROM purchase_packs;
 SELECT setval(pg_get_serial_sequence('projects', 'id'), coalesce(max(id), 1)) FROM projects;
+SELECT setval(pg_get_serial_sequence('semi_finished_goods', 'id'), coalesce(max(id), 1)) FROM semi_finished_goods;
+SELECT setval(pg_get_serial_sequence('requisitions', 'id'), coalesce(max(id), 1)) FROM requisitions;
 
 -- ============================================================================
 -- END OF SCRIPT — 100% READY FOR REALTIME CRUD

@@ -241,7 +241,38 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 
 -- ============================================================================
--- 14. ROW LEVEL SECURITY (RLS) POLICIES — 100% PUBLIC ACCESS FOR ANON
+-- 14. SEMI-FINISHED GOODS TABLE (สินค้ากึ่งสำเร็จรูป / WIP Bulk)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS semi_finished_goods (
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(50) NOT NULL UNIQUE,
+    name VARCHAR(255) NOT NULL,
+    batch_no VARCHAR(100),
+    qty DECIMAL(12,4) DEFAULT 0.0000,
+    unit VARCHAR(50) DEFAULT 'KG.',
+    tank_no VARCHAR(100),
+    mfg_date DATE,
+    status VARCHAR(50) DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================================
+-- 15. REQUISITIONS TABLE (ใบเบิกพัสดุและวัตถุดิบเคมี)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS requisitions (
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(50) NOT NULL UNIQUE,
+    date DATE,
+    department VARCHAR(255) NOT NULL,
+    requester VARCHAR(255) NOT NULL,
+    purpose TEXT,
+    status VARCHAR(50) DEFAULT 'approved',
+    items JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================================
+-- 16. ROW LEVEL SECURITY (RLS) POLICIES — 100% PUBLIC ACCESS FOR ANON
 -- ============================================================================
 DO $$ 
 DECLARE
@@ -250,7 +281,7 @@ DECLARE
         'suppliers', 'customers', 'products', 'raw_materials',
         'bom_recipes', 'bom_items', 'production_orders', 'packing_orders',
         'purchase_orders', 'purchase_order_items', 'grns', 'prechecks',
-        'inventory_pack', 'purchase_packs', 'projects'
+        'inventory_pack', 'purchase_packs', 'projects', 'semi_finished_goods', 'requisitions'
     ];
 BEGIN
     FOREACH tbl IN ARRAY tables LOOP
@@ -261,7 +292,7 @@ BEGIN
 END $$;
 
 -- ============================================================================
--- 15. ENABLE SUPABASE REALTIME REPLICATION (เรียลไทม์ 100%)
+-- 17. ENABLE SUPABASE REALTIME REPLICATION (เรียลไทม์ 100%)
 -- ============================================================================
 ALTER TABLE suppliers REPLICA IDENTITY FULL;
 ALTER TABLE customers REPLICA IDENTITY FULL;
@@ -278,6 +309,8 @@ ALTER TABLE prechecks REPLICA IDENTITY FULL;
 ALTER TABLE inventory_pack REPLICA IDENTITY FULL;
 ALTER TABLE purchase_packs REPLICA IDENTITY FULL;
 ALTER TABLE projects REPLICA IDENTITY FULL;
+ALTER TABLE semi_finished_goods REPLICA IDENTITY FULL;
+ALTER TABLE requisitions REPLICA IDENTITY FULL;
 
 DO $$
 DECLARE
@@ -286,7 +319,7 @@ DECLARE
         'suppliers', 'customers', 'products', 'raw_materials',
         'bom_recipes', 'bom_items', 'production_orders', 'packing_orders',
         'purchase_orders', 'purchase_order_items', 'grns', 'prechecks',
-        'inventory_pack', 'purchase_packs', 'projects'
+        'inventory_pack', 'purchase_packs', 'projects', 'semi_finished_goods', 'requisitions'
     ];
 BEGIN
     FOREACH tbl IN ARRAY tables LOOP
@@ -410,6 +443,39 @@ INSERT INTO projects (id, title, project_type, customer, customer_status, owner,
 (3, 'น้ำยาเคลือบแก้วรถยนต์นาโน', 'ODM สูตรเฉพาะทาง', 'บริษัท เอสซีจี เคมิคอลส์ จำกัด (มหาชน)', 'ลูกค้าองค์กร', 'คุณวิทวัส การผลิต', 250000.00, '10/02/2024', '25/03/2024', 30, 'รอสารเคมี', 1000.00, '["เคมีภัณฑ์", "คาร์แคร์", "นาโน"]'::jsonb, 'ผลิตน้ำยาเคลือบสีรถยนต์สูตรซิลิกา 9H สำหรับศูนย์ดูแลรถยนต์ครบวงจร', 'CC-NANO-9H', 'Lot3', 'ULTRA CERAMIC COATING 9H', 'ขวดอลูมิเนียม 50ml พร้อมผ้าไมโครไฟเบอร์และฟองน้ำลงน้ำยา', 'เคมีภัณฑ์ยานยนต์')
 ON CONFLICT (id) DO NOTHING;
 
+-- ============================================================================
+-- SAFE COLUMN MIGRATION (รับประกันครบทุกตารางและทุกคอลัมน์ 100%)
+-- ============================================================================
+ALTER TABLE products ADD COLUMN IF NOT EXISTS category VARCHAR(100);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS unit_price DECIMAL(12,2) DEFAULT 0.00;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_qty DECIMAL(12,4) DEFAULT 0.0000;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS min_stock DECIMAL(12,4) DEFAULT 0.0000;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE raw_materials ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE bom_items ADD COLUMN IF NOT EXISTS unit_price DECIMAL(14,2) DEFAULT 0.00;
+
+ALTER TABLE grns ADD COLUMN IF NOT EXISTS unit VARCHAR(50) DEFAULT 'KG.';
+ALTER TABLE grns ADD COLUMN IF NOT EXISTS unit_price DECIMAL(14,2) DEFAULT 0.00;
+ALTER TABLE grns ADD COLUMN IF NOT EXISTS supplier_name VARCHAR(255);
+ALTER TABLE grns ADD COLUMN IF NOT EXISTS po_number VARCHAR(100);
+ALTER TABLE grns ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE prechecks ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE prechecks ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE inventory_pack ADD COLUMN IF NOT EXISTS supplier_name VARCHAR(255);
+ALTER TABLE inventory_pack ADD COLUMN IF NOT EXISTS unit_price DECIMAL(14,2) DEFAULT 0.00;
+ALTER TABLE inventory_pack ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE inventory_pack ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE purchase_packs ADD COLUMN IF NOT EXISTS unit VARCHAR(50) DEFAULT 'ชิ้น';
+ALTER TABLE purchase_packs ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE packing_orders ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
 SELECT setval(pg_get_serial_sequence('suppliers', 'id'), coalesce(max(id), 1)) FROM suppliers;
 SELECT setval(pg_get_serial_sequence('customers', 'id'), coalesce(max(id), 1)) FROM customers;
 SELECT setval(pg_get_serial_sequence('products', 'id'), coalesce(max(id), 1)) FROM products;
@@ -425,4 +491,6 @@ SELECT setval(pg_get_serial_sequence('prechecks', 'id'), coalesce(max(id), 1)) F
 SELECT setval(pg_get_serial_sequence('inventory_pack', 'id'), coalesce(max(id), 1)) FROM inventory_pack;
 SELECT setval(pg_get_serial_sequence('purchase_packs', 'id'), coalesce(max(id), 1)) FROM purchase_packs;
 SELECT setval(pg_get_serial_sequence('projects', 'id'), coalesce(max(id), 1)) FROM projects;
+SELECT setval(pg_get_serial_sequence('semi_finished_goods', 'id'), coalesce(max(id), 1)) FROM semi_finished_goods;
+SELECT setval(pg_get_serial_sequence('requisitions', 'id'), coalesce(max(id), 1)) FROM requisitions;
 `;

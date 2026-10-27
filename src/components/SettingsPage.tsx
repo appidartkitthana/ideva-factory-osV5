@@ -20,7 +20,8 @@ import {
   Cpu,
   Info,
   Copy,
-  Check
+  Check,
+  Share2
 } from "lucide-react";
 import {
   testSupabaseConnection,
@@ -28,7 +29,8 @@ import {
   resetSampleDatabase,
   getSupabaseConfig,
   updateSupabaseConfig,
-  resetSupabaseConfig
+  resetSupabaseConfig,
+  getShareableDatabaseLink
 } from "../lib/supabaseClient";
 import { FULL_SUPABASE_SCHEMA_SQL } from "../lib/schemaSql";
 
@@ -95,6 +97,7 @@ export default function SettingsPage({
   const [configUrl, setConfigUrl] = useState(currentConfig.url);
   const [configKey, setConfigKey] = useState(currentConfig.key);
   const [configSaved, setConfigSaved] = useState(false);
+  const [copiedShareLink, setCopiedShareLink] = useState(false);
 
   const [copiedSql, setCopiedSql] = useState(false);
   const [showSqlCode, setShowSqlCode] = useState(false);
@@ -270,6 +273,41 @@ export default function SettingsPage({
               <span>ทดสอบสัญญาณ</span>
             </button>
           </div>
+        </div>
+
+        {/* Universal Multi-Device Link Banner */}
+        <div className="p-4 bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-xl shadow-xs border border-blue-400/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 font-bold text-xs sm:text-sm text-blue-200">
+              <Sparkles className="w-4 h-4 text-amber-300" />
+              <span>ลิงก์แชร์เชื่อมต่อฐานข้อมูลทุกอุปกรณ์ (Universal Multi-Device Sync Link)</span>
+            </div>
+            <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
+              เปิดลิงก์นี้บน Netlify, เครื่องมือถือ หรือส่งให้ทีมงาน ทุกเครื่องจะเชื่อมต่อและเห็นฐานข้อมูลเดียวกัน 100% ทันที
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const link = getShareableDatabaseLink();
+              navigator.clipboard.writeText(link);
+              setCopiedShareLink(true);
+              setTimeout(() => setCopiedShareLink(false), 2500);
+            }}
+            className="shrink-0 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+          >
+            {copiedShareLink ? (
+              <>
+                <Check className="w-4 h-4 text-emerald-300" />
+                <span>คัดลอกลิงก์แล้ว!</span>
+              </>
+            ) : (
+              <>
+                <Share2 className="w-4 h-4" />
+                <span>คัดลอกลิงก์แชร์ซิงค์</span>
+              </>
+            )}
+          </button>
         </div>
 
         {/* Custom Supabase URL & Key Form */}
