@@ -335,14 +335,31 @@ export default function App() {
   }, [activeTheme]);
 
   useEffect(() => {
-    // ⚡ 1. Load all data IMMEDIATELY on boot (from local persistent cache and Supabase)
+    // ⚡ 1. Load all data IMMEDIATELY on boot
     loadAllData();
 
-    // ⚡ 2. Connect & verify health + run initial sync queue flush
+    // ⚡ 2. Realtime WebSocket subscription setup (supports dynamic config changes)
+    let realtimeUnsub: (() => void) | null = null;
+    const setupRealtime = () => {
+      if (realtimeUnsub) {
+        try { realtimeUnsub(); } catch {}
+      }
+      realtimeUnsub = subscribeToRealtimeDatabase((table, eventType) => {
+        console.log(`⚡ [Supabase Realtime] ${eventType} on ${table}, reloading...`);
+        loadAllData();
+      });
+    };
+
+    setupRealtime();
+
+    // ⚡ 3. Connect & verify health
     verifyDbHealth().then(async (isOnline) => {
       if (isOnline) {
         await processSyncQueue();
         await loadAllData();
+      } else {
+        // Automatically reveal Quick Config when URL fails or ERR_NAME_NOT_RESOLVED on Netlify
+        setShowQuickConfig(true);
       }
       setSyncPendingCount(getSyncQueue().length);
     });
@@ -351,6 +368,7 @@ export default function App() {
       const cfg = getSupabaseConfig();
       setQuickUrl(cfg.url);
       setQuickKey(cfg.key);
+      setupRealtime();
       verifyDbHealth().then((ok) => {
         if (ok) {
           processSyncQueue().then(() => loadAllData());
@@ -358,12 +376,6 @@ export default function App() {
       });
     };
     window.addEventListener("supabase_config_changed", handleConfigChange);
-
-    // ⚡ 3. 100% Realtime Sync: Listen to live INSERT / UPDATE / DELETE on all Supabase tables
-    const unsubscribe = subscribeToRealtimeDatabase((table, eventType) => {
-      console.log(`[Realtime Sync] ${eventType} detected on ${table}, refreshing view...`);
-      loadAllData();
-    });
 
     // ⚡ 4. Background auto-connect & auto-sync worker every 4 seconds
     const syncInterval = setInterval(async () => {
@@ -383,7 +395,9 @@ export default function App() {
 
     return () => {
       clearInterval(syncInterval);
-      unsubscribe();
+      if (realtimeUnsub) {
+        try { realtimeUnsub(); } catch {}
+      }
       window.removeEventListener("supabase_config_changed", handleConfigChange);
     };
   }, []);

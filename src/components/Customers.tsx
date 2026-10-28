@@ -31,12 +31,21 @@ export default function Customers({
   const [address, setAddress] = useState("");
   const [status, setStatus] = useState("active");
 
-  const filtered = customers.filter(c => 
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    (c.code && c.code.toLowerCase().includes(search.toLowerCase())) ||
-    (c.contact && c.contact.toLowerCase().includes(search.toLowerCase())) ||
-    (c.address && c.address.toLowerCase().includes(search.toLowerCase()))
-  );
+  const filtered = customers.filter(c => {
+    if (!c) return false;
+    const nameStr = (c.name || "").toLowerCase();
+    const codeStr = (c.code || "").toLowerCase();
+    const contactStr = (c.contact || "").toLowerCase();
+    const addressStr = (c.address || "").toLowerCase();
+    const searchStr = (search || "").toLowerCase();
+
+    return (
+      nameStr.includes(searchStr) ||
+      codeStr.includes(searchStr) ||
+      contactStr.includes(searchStr) ||
+      addressStr.includes(searchStr)
+    );
+  });
 
   const openFormModal = (customer: Customer | null = null) => {
     if (customer) {
@@ -129,16 +138,16 @@ export default function Customers({
               {filtered.map((c) => (
                 <tr key={c.id} className="odd:bg-white even:bg-[#f2f6fc] hover:bg-blue-50/55 transition-colors">
                   <td className="p-2 border border-slate-200 text-slate-500 font-sans font-normal">
-                    {c.created_at ? c.created_at.split(/[ T]/)[0] : "-"}
+                    {c.created_at ? String(c.created_at).split(/[ T]/)[0] : "-"}
                   </td>
-                  <td className="p-2 border border-slate-200 font-normal font-mono text-blue-600">{c.code}</td>
+                  <td className="p-2 border border-slate-200 font-normal font-mono text-blue-600">{c.code || "-"}</td>
                   <td className="p-2 border border-slate-200">
-                    <div className="font-normal text-slate-800">{c.name}</div>
+                    <div className="font-normal text-slate-800">{c.name || "-"}</div>
                   </td>
                   <td className="p-2 border border-slate-200 text-slate-600 font-normal">
                     {c.contact || "-"}
                   </td>
-                  <td className="p-2 border border-slate-200 text-slate-500 max-w-[200px] truncate font-sans font-normal" title={c.address}>
+                  <td className="p-2 border border-slate-200 text-slate-500 max-w-[200px] truncate font-sans font-normal" title={c.address || ""}>
                     {c.address || "-"}
                   </td>
                   <td className="p-2 border border-slate-200">
