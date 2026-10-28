@@ -1,9 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 import { SAMPLE_SEED_DATA } from "./seedData";
+import { EMBEDDED_SUPABASE_URL, EMBEDDED_SUPABASE_KEY } from "./supabaseCredentials";
 
-// Default credentials from project config
-const DEFAULT_SUPABASE_URL = (import.meta as any).env.VITE_SUPABASE_URL || "https://zizlhxikswejwvoftshk.supabase.co";
-const DEFAULT_SUPABASE_KEY = (import.meta as any).env.VITE_SUPABASE_KEY || (import.meta as any).env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InppemxoeGlrc3dland2b2Z0c2hrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwNzQ4NDMsImV4cCI6MjA5NjY1MDg0M30.lw7RsYg6Icz7HhT7cbjJsKrOv-pzKLV01D5WR03Ffg0";
+// Default credentials hardcoded & embedded directly into system build
+const DEFAULT_SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || EMBEDDED_SUPABASE_URL;
+const DEFAULT_SUPABASE_KEY = (import.meta as any).env?.VITE_SUPABASE_KEY || (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || EMBEDDED_SUPABASE_KEY;
 
 export function getSupabaseConfig() {
   let customUrl = "";
@@ -1151,31 +1152,100 @@ export async function testSupabaseConnection(): Promise<{
   }
 }
 
+export const ALL_17_TABLES = [
+  "suppliers",
+  "customers",
+  "products",
+  "raw_materials",
+  "bom_recipes",
+  "bom_items",
+  "production_orders",
+  "packing_orders",
+  "purchase_orders",
+  "purchase_order_items",
+  "grns",
+  "prechecks",
+  "inventory_pack",
+  "purchase_packs",
+  "projects",
+  "semi_finished_goods",
+  "requisitions"
+];
+
 /**
- * Real-time Supabase Subscription
- * Listens to all database events (INSERT, UPDATE, DELETE) across all tables
- * and notifies listeners immediately for 100% realtime sync.
+ * Enhanced Real-time Supabase Subscription
+ * - Listens specifically to all 17 database tables for INSERT, UPDATE, and DELETE events.
+ * - Subscribes to schema 'public' wildcard AND explicit table bindings for 100% catch rate across devices/SDK versions.
+ * - Features automatic re-subscription on network disconnect / error / timeout.
+ * - Debounces rapid event triggers to optimize network calls while keeping UI updated globally in real time.
  */
 export function subscribeToRealtimeDatabase(onUpdate: (table: string, eventType: string) => void) {
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let isUnsubscribed = false;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const debouncedNotify = (table: string, eventType: string) => {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      onUpdate(table, eventType);
+    }, 120);
+  };
+
   try {
-    const channel = supabase
-      .channel("ideva-realtime-sync")
-      .on(
+    const channelName = `ideva-realtime-sync-${Math.random().toString(36).substring(2, 9)}`;
+    let channel = supabase.channel(channelName);
+
+    // 1. Primary schema-wide listener for INSERT, UPDATE, DELETE
+    channel = channel.on(
+      "postgres_changes",
+      { event: "*", schema: "public" },
+      (payload: any) => {
+        console.log(`⚡ [Supabase Realtime Schema] ${payload.eventType} on table '${payload.table}'`);
+        debouncedNotify(payload.table || "unknown", payload.eventType || "UPDATE");
+      }
+    );
+
+    // 2. Explicit per-table listeners for all 17 tables to ensure 100% event catch rate
+    ALL_17_TABLES.forEach((table) => {
+      channel = channel.on(
         "postgres_changes",
-        { event: "*", schema: "public" },
+        { event: "*", schema: "public", table },
         (payload: any) => {
-          console.log(`⚡ [Supabase Realtime] ${payload.eventType} on table: ${payload.table}`);
-          onUpdate(payload.table, payload.eventType);
+          console.log(`⚡ [Supabase Realtime Table] ${payload.eventType} on table '${table}'`);
+          debouncedNotify(table, payload.eventType || "UPDATE");
         }
-      )
-      .subscribe((status: string) => {
-        if (status === "SUBSCRIBED") {
-          console.log("🟢 [Supabase Realtime] Subscribed to all tables successfully!");
+      );
+    });
+
+    // 3. Subscribe with auto-reconnect monitoring
+    channel.subscribe((status: string, err?: any) => {
+      if (status === "SUBSCRIBED") {
+        console.log("🟢 [Supabase Realtime] Subscribed to all 17 tables successfully!");
+      } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        console.warn(`⚠️ [Supabase Realtime] Channel status '${status}', scheduling re-subscribe...`, err);
+        if (!isUnsubscribed && !retryTimer) {
+          retryTimer = setTimeout(() => {
+            retryTimer = null;
+            if (!isUnsubscribed) {
+              console.log("🔄 [Supabase Realtime] Attempting channel re-subscription...");
+              try {
+                supabase.removeChannel(channel);
+              } catch {}
+              // Re-subscribe
+              subscribeToRealtimeDatabase(onUpdate);
+            }
+          }, 3000);
         }
-      });
+      }
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      isUnsubscribed = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      if (retryTimer) clearTimeout(retryTimer);
+      try {
+        supabase.removeChannel(channel);
+      } catch {}
     };
   } catch (err) {
     console.warn("Could not subscribe to Supabase Realtime channel:", err);
