@@ -19,7 +19,8 @@ import {
   updateSupabaseConfig,
   processSyncQueue,
   getSyncQueue,
-  seedDatabaseTables
+  seedDatabaseTables,
+  broadcastSyncChannel
 } from "./lib/supabaseClient";
 import { 
   PrecheckPage, 
@@ -352,7 +353,7 @@ export default function App() {
 
     setupRealtime();
 
-    // ⚡ 3. Connect & verify health
+    // ⚡ 3. Connect & verify health on startup
     verifyDbHealth().then(async (isOnline) => {
       if (isOnline) {
         await processSyncQueue();
@@ -377,24 +378,49 @@ export default function App() {
     };
     window.addEventListener("supabase_config_changed", handleConfigChange);
 
-    // ⚡ 4. Background auto-connect & auto-sync worker every 4 seconds
+    // ⚡ 4. Instant Multi-Tab Broadcast Synchronization
+    if (broadcastSyncChannel) {
+      broadcastSyncChannel.onmessage = (event) => {
+        if (event.data?.type === "DATA_MUTATED") {
+          console.log("⚡ [BroadcastChannel] Data mutation detected across tabs, reloading...");
+          loadAllData();
+        }
+      };
+    }
+
+    // ⚡ 5. Window Focus & Tab Visibility Change Refresh
+    const handleFocus = () => {
+      loadAllData();
+      verifyDbHealth();
+    };
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleFocus);
+
+    // ⚡ 6. Continuous 2-Way Active Database Heartbeat & Auto-Polling (Runs every 3 seconds)
+    // Ensures ALL connected devices and browsers fetch fresh Supabase data continuously,
+    // even if WebSockets fluctuate or network drops temporarily.
     const syncInterval = setInterval(async () => {
       const currentQueue = getSyncQueue();
       setSyncPendingCount(currentQueue.length);
 
-      // Verify connection in background and flush queue if online
+      // Verify connection in background
       const ok = await verifyDbHealth();
-      if (ok && currentQueue.length > 0) {
-        const synced = await processSyncQueue();
-        if (synced > 0) {
-          setSyncPendingCount(getSyncQueue().length);
-          await loadAllData();
+      if (ok) {
+        if (currentQueue.length > 0) {
+          const synced = await processSyncQueue();
+          if (synced > 0) {
+            setSyncPendingCount(getSyncQueue().length);
+          }
         }
+        // Continuous live refresh from Supabase across all devices
+        await loadAllData();
       }
-    }, 4000);
+    }, 3000);
 
     return () => {
       clearInterval(syncInterval);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
       if (realtimeUnsub) {
         try { realtimeUnsub(); } catch {}
       }

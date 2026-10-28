@@ -135,6 +135,18 @@ export const setSupabaseOffline = (_offline: boolean) => {
 const LIVE_STORE_PREFIX = "ideva_db_v5_";
 const SYNC_QUEUE_KEY = "ideva_db_v5_sync_queue";
 
+export const broadcastSyncChannel = typeof window !== "undefined" && typeof BroadcastChannel !== "undefined" 
+  ? new BroadcastChannel("ideva_factory_sync") 
+  : null;
+
+export function notifyGlobalSync() {
+  if (broadcastSyncChannel) {
+    try {
+      broadcastSyncChannel.postMessage({ type: "DATA_MUTATED", timestamp: Date.now() });
+    } catch {}
+  }
+}
+
 export interface SyncItem {
   id?: string | number;
   action: "save" | "delete";
@@ -669,6 +681,7 @@ export async function clientSave(entity: string, id: number, data: any): Promise
     }
   }
 
+  notifyGlobalSync();
   return savedId;
 }
 
@@ -747,6 +760,7 @@ export async function clientDelete(entity: string, id: number | string): Promise
     });
   }
 
+  notifyGlobalSync();
   return true;
 }
 

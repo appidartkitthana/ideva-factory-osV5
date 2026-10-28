@@ -217,6 +217,9 @@ export default function Warehouse({
     status: "active"
   });
 
+  // Supplier Search & Filter state
+  const [supplierSearchTerm, setSupplierSearchTerm] = useState("");
+
   // Product / Finished Goods Modal state
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -1049,72 +1052,276 @@ export default function Warehouse({
       {/* 2. SUB-VIEW: ผู้จำหน่ายวัตถุดิบ (Suppliers)                                */}
       {/* ========================================================================= */}
       {activeSection === "supplier" && (
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
-            <div>
-              <h2 className="text-sm sm:text-base font-bold text-slate-800">รายชื่อผู้จำหน่ายวัตถุดิบเคมีภัณฑ์ (Suppliers)</h2>
-              <p className="text-xs text-slate-500">ข้อมูลคู่ค้า ผู้ผลิต และซัพพลายเออร์ส่งเคมีดิบ บันทึกตรงสู่ฐานข้อมูล</p>
+        <div className="bg-white rounded-2xl border border-slate-250 shadow-md overflow-hidden space-y-0 animate-in fade-in duration-150">
+          {/* Google Sheets Inspired Toolbar Header */}
+          <div className="bg-gradient-to-r from-emerald-800 via-teal-800 to-slate-900 text-white p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-inner">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-emerald-500/20 rounded-xl border border-emerald-400/30 text-emerald-300">
+                <TruckIcon className="w-7 h-7 fill-current" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm sm:text-base font-extrabold tracking-wide text-white">
+                    รายชื่อผู้จำหน่ายวัตถุดิบเคมีภัณฑ์ (Suppliers Sheet)
+                  </h2>
+                  <span className="bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 text-[10px] font-mono px-2 py-0.5 rounded-full font-bold">
+                    {activeSuppliers.length} รายการ
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300 mt-0.5">
+                  ตารางฐานข้อมูลคู่ค้าและผู้จัดจำหน่ายเคมีภัณฑ์ดิบ (100% Realtime Database View)
+                </p>
+              </div>
             </div>
-            <button
-              onClick={() => openSupplierModal()}
-              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm"
-            >
-              <Plus className="w-4 h-4" /> เพิ่มผู้จำหน่ายใหม่
-            </button>
+
+            {/* Quick Actions & Search Toolbar */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative flex-1 md:w-64">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="ค้นหาผู้จำหน่าย, รหัส, เบอร์โทร..."
+                  value={supplierSearchTerm}
+                  onChange={(e) => setSupplierSearchTerm(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-800/80 text-white placeholder-slate-400 border border-slate-700 rounded-xl focus:outline-none focus:border-emerald-400"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const dataToExport = activeSuppliers.map((s) => {
+                    const items = rawMaterials.filter((rm) => (rm.supplier_name || rm.supplier) === s.name);
+                    const val = items.reduce((sum, rm) => sum + rm.stock_qty * (rm.unit_price || 0), 0);
+                    return [s.code, s.name, s.contact || "-", s.phone || "-", s.email || "-", s.address || "-", items.length, val];
+                  });
+                  exportToCSV(
+                    dataToExport,
+                    ["รหัส", "ชื่อบริษัท/ซัพพลายเออร์", "ผู้ติดต่อ", "เบอร์โทร", "อีเมล", "ที่อยู่", "จำนวนรายการเคมี", "มูลค่าในสต็อก"],
+                    "Suppliers_Sheet"
+                  );
+                }}
+                className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-slate-100 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-white/20 transition-all cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-300" />
+                <span>ส่งออก Sheet (CSV)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openSupplierModal()}
+                className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md transition-all cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>เพิ่มผู้จำหน่ายใหม่</span>
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {activeSuppliers.map((sup) => {
-              const itemsBySup = rawMaterials.filter((rm) => (rm.supplier_name || rm.supplier) === sup.name);
-              const totalSupVal = itemsBySup.reduce((sum, rm) => sum + rm.stock_qty * (rm.unit_price || 0), 0);
-              return (
-                <div key={sup.id} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 relative group">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-2">
-                      <TruckIcon />
-                      <div>
-                        <div className="text-[10px] font-mono font-bold text-blue-600">{sup.code}</div>
-                        <h3 className="font-bold text-slate-800 text-xs sm:text-sm">{sup.name}</h3>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => openSupplierModal(sup)}
-                        className="p-1 text-slate-400 hover:text-blue-600 rounded-lg cursor-pointer transition-colors"
-                        title="แก้ไขข้อมูลผู้จำหน่าย"
+          {/* Spreadsheet Column Letter Header Bar */}
+          <div className="bg-slate-200 border-b border-slate-300 px-3 py-1 flex items-center text-[10px] font-mono text-slate-600 font-bold select-none overflow-x-auto">
+            <span className="w-10 text-center border-r border-slate-300 shrink-0">#</span>
+            <span className="w-24 text-center border-r border-slate-300 shrink-0">A (รหัส)</span>
+            <span className="flex-1 min-w-[180px] px-2 border-r border-slate-300">B (ชื่อบริษัท / ซัพพลายเออร์)</span>
+            <span className="w-28 px-2 border-r border-slate-300 shrink-0">C (ผู้ติดต่อ)</span>
+            <span className="w-28 px-2 border-r border-slate-300 shrink-0">D (เบอร์โทร)</span>
+            <span className="w-36 px-2 border-r border-slate-300 shrink-0">E (อีเมล)</span>
+            <span className="w-48 px-2 border-r border-slate-300 shrink-0">F (ที่อยู่จัดส่ง/ติดต่อ)</span>
+            <span className="w-28 text-center border-r border-slate-300 shrink-0">G (เคมีดิบ)</span>
+            <span className="w-32 text-right px-2 border-r border-slate-300 shrink-0">H (มูลค่าสต็อก)</span>
+            <span className="w-32 text-center shrink-0">I (ดำเนินการ)</span>
+          </div>
+
+          {/* Google Sheets Styled Main Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-700 border-collapse border border-slate-200">
+              <thead>
+                <tr className="bg-slate-100 text-[11px] font-extrabold text-slate-700 border-b border-slate-300 uppercase tracking-wider">
+                  <th className="p-2 border border-slate-300 text-center w-10 bg-slate-200/80 font-mono">ลำดับ</th>
+                  <th className="p-2 border border-slate-300 w-24">รหัสผู้จำหน่าย</th>
+                  <th className="p-2 border border-slate-300 min-w-[180px]">ชื่อบริษัท / ร้านค้าซัพพลายเออร์</th>
+                  <th className="p-2 border border-slate-300 w-28">ผู้ติดต่อ</th>
+                  <th className="p-2 border border-slate-300 w-28">เบอร์โทรศัพท์</th>
+                  <th className="p-2 border border-slate-300 w-36">อีเมล</th>
+                  <th className="p-2 border border-slate-300 w-48">ที่อยู่จัดส่ง / ติดต่อ</th>
+                  <th className="p-2 border border-slate-300 text-center w-28">รายการเคมีดิบ</th>
+                  <th className="p-2 border border-slate-300 text-right w-32">มูลค่าในสต็อก</th>
+                  <th className="p-2 border border-slate-300 text-center w-36 bg-slate-200/50">ดำเนินการ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 font-sans">
+                {activeSuppliers
+                  .filter((sup) => {
+                    if (!supplierSearchTerm) return true;
+                    const query = supplierSearchTerm.toLowerCase();
+                    return (
+                      (sup.code && sup.code.toLowerCase().includes(query)) ||
+                      (sup.name && sup.name.toLowerCase().includes(query)) ||
+                      (sup.contact && sup.contact.toLowerCase().includes(query)) ||
+                      (sup.phone && sup.phone.toLowerCase().includes(query)) ||
+                      (sup.email && sup.email.toLowerCase().includes(query))
+                    );
+                  })
+                  .map((sup, idx) => {
+                    const itemsBySup = rawMaterials.filter((rm) => (rm.supplier_name || rm.supplier) === sup.name);
+                    const totalSupVal = itemsBySup.reduce((sum, rm) => sum + rm.stock_qty * (rm.unit_price || 0), 0);
+
+                    return (
+                      <tr 
+                        key={sup.id} 
+                        className="odd:bg-white even:bg-[#f4f9f5] hover:bg-emerald-50/70 transition-colors group"
                       >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => setDeleteTarget({ id: sup.id, name: sup.name, type: "supplier" })}
-                        className="p-1 text-slate-400 hover:text-red-600 rounded-lg cursor-pointer transition-colors"
-                        title="ลบผู้จำหน่าย"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="text-xs text-slate-600 space-y-1">
-                    {sup.contact && <p className="text-[11px]">ผู้ติดต่อ: <strong>{sup.contact}</strong></p>}
-                    {sup.phone && <p className="text-[11px]">เบอร์โทร: <strong>{sup.phone}</strong></p>}
-                    {sup.email && <p className="text-[11px]">อีเมล: <strong>{sup.email}</strong></p>}
-                    <p>เคมีภัณฑ์ที่จำหน่าย: <strong className="text-blue-700">{itemsBySup.length} รายการ</strong></p>
-                    <p>มูลค่าในสต็อกปัจจุบัน: <strong className="text-emerald-700">฿{totalSupVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></p>
-                  </div>
-                  <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
-                    <button
-                      onClick={() => {
-                        setSupplierFilter(sup.name);
-                        setActiveSection("raw");
-                      }}
-                      className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
-                    >
-                      ดูรายการสารเคมีจากรายนี้ ({itemsBySup.length}) →
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                        {/* Index */}
+                        <td className="p-2 border border-slate-200 text-center font-mono text-slate-400 bg-slate-50/80 font-bold">
+                          {idx + 1}
+                        </td>
+
+                        {/* Code */}
+                        <td className="p-2 border border-slate-200 font-mono font-bold text-blue-700">
+                          {sup.code || `SUP-${String(idx + 1).padStart(3, "0")}`}
+                        </td>
+
+                        {/* Name */}
+                        <td className="p-2 border border-slate-200">
+                          <div className="font-bold text-slate-800">{sup.name}</div>
+                          {sup.status === "suspended" && (
+                            <span className="inline-block text-[9px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold mt-0.5">
+                              ระงับชั่วคราว
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Contact */}
+                        <td className="p-2 border border-slate-200 text-slate-700 font-semibold">
+                          {sup.contact || "-"}
+                        </td>
+
+                        {/* Phone */}
+                        <td className="p-2 border border-slate-200 font-mono font-semibold text-slate-700">
+                          {sup.phone ? (
+                            <a href={`tel:${sup.phone}`} className="hover:text-blue-600 hover:underline">
+                              {sup.phone}
+                            </a>
+                          ) : "-"}
+                        </td>
+
+                        {/* Email */}
+                        <td className="p-2 border border-slate-200 font-mono text-slate-600 text-[11px] truncate max-w-[150px]" title={sup.email || ""}>
+                          {sup.email || "-"}
+                        </td>
+
+                        {/* Address */}
+                        <td className="p-2 border border-slate-200 text-slate-500 text-[11px] truncate max-w-[200px]" title={sup.address || ""}>
+                          {sup.address || "-"}
+                        </td>
+
+                        {/* Chemical Count */}
+                        <td className="p-2 border border-slate-200 text-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSupplierFilter(sup.name);
+                              setActiveSection("raw");
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-all cursor-pointer"
+                          >
+                            <span>{itemsBySup.length} รายการ</span>
+                            <ArrowRight className="w-3 h-3" />
+                          </button>
+                        </td>
+
+                        {/* Inventory Value */}
+                        <td className="p-2 border border-slate-200 text-right font-mono font-bold text-emerald-700 text-xs">
+                          ฿{totalSupVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+
+                        {/* Action Column Buttons (ปุ่มดำเนินการ) */}
+                        <td className="p-2 border border-slate-200 text-center bg-slate-50/50">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSupplierFilter(sup.name);
+                                setActiveSection("raw");
+                              }}
+                              className="p-1 text-blue-600 hover:bg-blue-100 rounded-lg transition-all cursor-pointer"
+                              title="ดูรายการเคมีดิบจากผู้จำหน่ายนี้"
+                            >
+                              <Search className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openSupplierModal(sup)}
+                              className="p-1 text-amber-600 hover:bg-amber-100 rounded-lg transition-all cursor-pointer"
+                              title="แก้ไขข้อมูลผู้จำหน่าย"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteTarget({ id: sup.id, name: sup.name, type: "supplier" })}
+                              className="p-1 text-red-600 hover:bg-red-100 rounded-lg transition-all cursor-pointer"
+                              title="ลบข้อมูลผู้จำหน่าย"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                {activeSuppliers.length === 0 && (
+                  <tr>
+                    <td colSpan={10} className="p-8 text-center text-slate-400 bg-slate-50">
+                      ไม่พบข้อมูลผู้จำหน่ายวัตถุดิบเคมีในระบบ
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Footer Action Bar (ส่วนท้ายเพิ่มปุ่มดำเนินการ) */}
+          <div className="bg-slate-100 border-t border-slate-300 p-3 sm:p-4 flex flex-col md:flex-row items-center justify-between gap-3 text-xs">
+            {/* Left summary stats */}
+            <div className="flex items-center gap-4 text-slate-600 font-semibold flex-wrap">
+              <span className="flex items-center gap-1.5">
+                <TruckIcon className="w-4 h-4 text-emerald-600 fill-current" />
+                <span>รวมซัพพลายเออร์: <strong className="text-slate-900 font-mono">{activeSuppliers.length}</strong> ราย</span>
+              </span>
+              <span className="text-slate-300">|</span>
+              <span>
+                มูลค่าสต็อกเคมีภัณฑ์รวม: <strong className="text-emerald-700 font-mono text-sm">
+                  ฿{activeSuppliers.reduce((sum, s) => {
+                    const items = rawMaterials.filter((rm) => (rm.supplier_name || rm.supplier) === s.name);
+                    return sum + items.reduce((iSum, rm) => iSum + rm.stock_qty * (rm.unit_price || 0), 0);
+                  }, 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </strong>
+              </span>
+            </div>
+
+            {/* Right Action Buttons Bar */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => openSupplierModal()}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-emerald-600/10 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ เพิ่มผู้จำหน่ายใหม่</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (setActivePage) setActivePage("purchase");
+                }}
+                className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-blue-600/10 cursor-pointer"
+              >
+                <ShoppingCart className="w-4 h-4" />
+                <span>ออกใบสั่งซื้อ PO ใหม่</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
