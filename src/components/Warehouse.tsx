@@ -29,6 +29,8 @@ import {
   RequisitionSlip
 } from "../types";
 
+import { clientSave } from "../lib/supabaseClient";
+
 // ============================================================================
 // EXACT SOLID ICONS MATCHING USER SCREENSHOT WITH PASTEL ACCENT SUPPORT
 // ============================================================================
@@ -99,6 +101,25 @@ const CubesIcon = ({ className = "w-9 h-9 fill-current" }: { className?: string 
     <path d="M20.5 12.8l-3.5 2v4l3.5-2v-4z" />
   </svg>
 );
+
+// ============================================================================
+// UNIT & TOTAL VALUE CALCULATION HELPERS
+// ============================================================================
+
+export const isGramUnit = (unit?: string): boolean => {
+  if (!unit) return false;
+  const u = unit.trim().toLowerCase();
+  return u === "g" || u === "g." || u === "gram" || u === "grams" || u === "กรัม";
+};
+
+export const calculateMaterialTotalValue = (qty: number, unitPrice: number, unit?: string): number => {
+  const safeQty = Number(qty) || 0;
+  const safePrice = Number(unitPrice) || 0;
+  if (isGramUnit(unit)) {
+    return (safeQty / 1000) * safePrice;
+  }
+  return safeQty * safePrice;
+};
 
 // ============================================================================
 // COMPONENT INTERFACES
@@ -264,10 +285,14 @@ export default function Warehouse({
     item_id: 0,
     lot_number: "",
     qty: 0,
+    unit_price: 0,
     expiry_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
     receiver: "เจ้าหน้าที่คลังสินค้า",
     notes: ""
   });
+
+  // Lot History Modal State
+  const [selectedLotMaterial, setSelectedLotMaterial] = useState<RawMaterial | null>(null);
 
   // Calculator State
   const [selectedBomId, setSelectedBomId] = useState<number | "">("");
@@ -614,15 +639,16 @@ export default function Warehouse({
         status: rm.status
       });
     } else {
-      const nextNum = rawMaterials.length > 0
-        ? Math.max(...rawMaterials.map((r) => {
-            const num = parseInt((r.code || "").replace("RM-", ""), 10);
-            return isNaN(num) ? 0 : num;
-          })) + 1
-        : 1;
+      const existingCodes = new Set(rawMaterials.map((r) => (r.code || "").trim().toUpperCase()));
+      let codeNum = rawMaterials.length + 1;
+      let candidateCode = `RM-${String(codeNum).padStart(3, "0")}`;
+      while (existingCodes.has(candidateCode.toUpperCase())) {
+        codeNum++;
+        candidateCode = `RM-${String(codeNum).padStart(3, "0")}`;
+      }
       setEditingRaw(null);
       setRawForm({
-        code: `RM-${String(nextNum).padStart(3, "0")}`,
+        code: candidateCode,
         name: "",
         unit: "KG.",
         stock_qty: 0,
@@ -893,6 +919,31 @@ export default function Warehouse({
     if (importType === "raw") {
       const target = rawMaterials.find((rm) => rm.id === Number(importForm.item_id));
       if (!target || !onSaveRawMaterial) return;
+
+      const lotNum = importForm.lot_number.trim() || `LOT-${Date.now().toString().slice(-6)}`;
+      const lotUnitPrice = Number(importForm.unit_price) > 0 ? Number(importForm.unit_price) : Number(target.unit_price || 0);
+
+      // 1. Record Goods Receive Note (GRN) lot receiving record
+      try {
+        await clientSave("grns", 0, {
+          code: `GRN-2026-${String((grns?.length || 0) + 1).padStart(4, "0")}`,
+          raw_material_id: target.id,
+          supplier_name: target.supplier_name || target.supplier || "",
+          lot_number: lotNum,
+          expiry_date: importForm.expiry_date,
+          received_qty: Number(importForm.qty),
+          unit_price: lotUnitPrice,
+          unit: target.unit || "KG.",
+          receiver: importForm.receiver || "เจ้าหน้าที่คลังสินค้า",
+          receive_date: new Date().toISOString().slice(0, 10),
+          status: "completed",
+          notes: importForm.notes || ""
+        });
+      } catch (e) {
+        console.warn("Could not save GRN lot record:", e);
+      }
+
+      // 2. Update Raw Material total stock and lot price
       await onSaveRawMaterial({
         id: target.id,
         code: target.code,
@@ -900,12 +951,12 @@ export default function Warehouse({
         unit: target.unit,
         stock_qty: Number(target.stock_qty || 0) + Number(importForm.qty),
         min_stock: target.min_stock,
-        unit_price: target.unit_price,
+        unit_price: lotUnitPrice,
         supplier_name: target.supplier_name || target.supplier || "",
         status: target.status,
         image_url: target.image_url || ""
       });
-      showWarehouseToast(`✓ รับเข้าวัตถุดิบ ${target.name} จำนวน ${importForm.qty} ${target.unit} สำเร็จแล้ว!`);
+      showWarehouseToast(`✓ รับเข้าวัตถุดิบ ${target.name} ล็อต ${lotNum} จำนวน ${importForm.qty} ${target.unit} (ราคา ฿${lotUnitPrice}/หน่วย) สำเร็จแล้ว!`);
       setActiveSection("raw");
     } else if (importType === "consumable") {
       const target = inventoryPacks.find((ip) => ip.id === Number(importForm.item_id));
@@ -1164,7 +1215,7 @@ export default function Warehouse({
                   })
                   .map((sup, idx) => {
                     const itemsBySup = rawMaterials.filter((rm) => (rm.supplier_name || rm.supplier) === sup.name);
-                    const totalSupVal = itemsBySup.reduce((sum, rm) => sum + rm.stock_qty * (rm.unit_price || 0), 0);
+                    const totalSupVal = itemsBySup.reduce((sum, rm) => sum + calculateMaterialTotalValue(rm.stock_qty, rm.unit_price || 0, rm.unit), 0);
 
                     return (
                       <tr 
@@ -1294,7 +1345,7 @@ export default function Warehouse({
                 มูลค่าสต็อกเคมีภัณฑ์รวม: <strong className="text-emerald-700 font-mono text-sm">
                   ฿{activeSuppliers.reduce((sum, s) => {
                     const items = rawMaterials.filter((rm) => (rm.supplier_name || rm.supplier) === s.name);
-                    return sum + items.reduce((iSum, rm) => iSum + rm.stock_qty * (rm.unit_price || 0), 0);
+                    return sum + items.reduce((iSum, rm) => iSum + calculateMaterialTotalValue(rm.stock_qty, rm.unit_price || 0, rm.unit), 0);
                   }, 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </strong>
               </span>
@@ -1398,7 +1449,7 @@ export default function Warehouse({
                   })
                   .map((rm) => {
                     const isLow = rm.stock_qty <= rm.min_stock;
-                    const totalVal = rm.stock_qty * (rm.unit_price || 0);
+                    const totalVal = calculateMaterialTotalValue(rm.stock_qty, rm.unit_price || 0, rm.unit);
                     return (
                       <tr key={rm.id} className="hover:bg-slate-50 transition-colors">
                         <td className="p-2.5 font-bold font-mono text-blue-700">{rm.code}</td>
@@ -1422,7 +1473,15 @@ export default function Warehouse({
                           </span>
                         </td>
                         <td className="p-2.5 text-center">
-                          <div className="flex items-center justify-center gap-1">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedLotMaterial(rm)}
+                              className="px-2 py-0.5 text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md cursor-pointer transition-colors whitespace-nowrap shadow-2xs"
+                              title="ดูประวัติล็อตและราคาที่เคยรับเข้า"
+                            >
+                              ประวัติล็อต
+                            </button>
                             <button
                               onClick={() => openRawModal(rm)}
                               className="p-1 text-slate-500 hover:text-blue-600 cursor-pointer"
@@ -1516,7 +1575,7 @@ export default function Warehouse({
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">จำนวนที่นำเข้า *</label>
                 <input
@@ -1531,7 +1590,22 @@ export default function Warehouse({
                 />
               </div>
 
-              <div>
+              {importType === "raw" && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">ราคาต่อหน่วยล็อตนี้ (บาท)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={importForm.unit_price || ""}
+                    onChange={(e) => setImportForm({ ...importForm, unit_price: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl font-bold font-mono text-emerald-700"
+                    placeholder="เช่น 1360.00"
+                  />
+                </div>
+              )}
+
+              <div className={importType === "raw" ? "" : "sm:col-span-1"}>
                 <label className="block text-xs font-bold text-slate-700 mb-1">หมายเลขล็อต (Lot / Batch No.)</label>
                 <input
                   type="text"
@@ -3542,6 +3616,119 @@ export default function Warehouse({
                 className="px-5 py-2 bg-red-600 hover:bg-red-700 active:scale-95 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all shadow-md shadow-red-600/20 cursor-pointer"
               >
                 <Trash2 className="w-3.5 h-3.5" /> ยืนยันลบออกจากฐานข้อมูล
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* LOT HISTORY & BATCH PRICING MODAL */}
+      {selectedLotMaterial && (
+        <div className="fixed inset-0 bg-black/60 z-[9990] flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-3xl w-full overflow-hidden flex flex-col max-h-[85vh]">
+            {/* Header */}
+            <div className="p-4 sm:p-5 bg-gradient-to-r from-blue-900 to-slate-900 text-white flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-mono text-blue-300 font-bold bg-white/10 px-2 py-0.5 rounded uppercase">
+                  {selectedLotMaterial.code}
+                </span>
+                <h3 className="text-base sm:text-lg font-bold mt-1">
+                  ประวัติล็อตและราคาการรับเข้า: {selectedLotMaterial.name}
+                </h3>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  บริษัทผู้จำหน่าย: {selectedLotMaterial.supplier_name || selectedLotMaterial.supplier || "ไม่ได้ระบุ"} | คงเหลือปัจจุบัน: <strong className="text-emerald-400 font-mono">{selectedLotMaterial.stock_qty.toLocaleString()} {selectedLotMaterial.unit || "KG."}</strong>
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedLotMaterial(null)}
+                className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content Table */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-slate-700">
+                  รายการล็อตที่เคยรับเข้าทั้งหมด ({grns.filter(g => g.raw_material_id === selectedLotMaterial.id).length} ล็อต)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetId = selectedLotMaterial.id;
+                    setSelectedLotMaterial(null);
+                    setImportType("raw");
+                    setImportForm({
+                      ...importForm,
+                      item_id: targetId,
+                      unit_price: selectedLotMaterial.unit_price || 0
+                    });
+                    setActiveSection("import");
+                  }}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" /> + รับเข้าล็อตใหม่พร้อมราคาใหม่
+                </button>
+              </div>
+
+              <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <table className="w-full text-left text-xs text-slate-700 border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 font-bold text-[11px] text-slate-700 border-b border-slate-200 uppercase">
+                      <th className="p-2.5">เลขที่ GRN</th>
+                      <th className="p-2.5">หมายเลขล็อต (Lot No.)</th>
+                      <th className="p-2.5 text-center">วันที่รับเข้า</th>
+                      <th className="p-2.5 text-center">วันหมดอายุ</th>
+                      <th className="p-2.5 text-right">จำนวนที่รับ</th>
+                      <th className="p-2.5 text-right text-emerald-800 font-extrabold bg-emerald-50/80">ราคาต่อหน่วยประจำล็อต</th>
+                      <th className="p-2.5 text-right font-extrabold">มูลค่ารวมล็อต</th>
+                      <th className="p-2.5 text-slate-500">ผู้รับเข้า</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {grns
+                      .filter(g => g.raw_material_id === selectedLotMaterial.id)
+                      .map((g) => {
+                        const lotPrice = g.unit_price || selectedLotMaterial.unit_price || 0;
+                        const lotTotal = calculateMaterialTotalValue(g.received_qty, lotPrice, selectedLotMaterial.unit);
+                        return (
+                          <tr key={g.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="p-2.5 font-bold font-mono text-blue-700">{g.code}</td>
+                            <td className="p-2.5 font-extrabold font-mono text-emerald-700">{g.lot_number}</td>
+                            <td className="p-2.5 text-center font-mono text-slate-600">{g.receive_date}</td>
+                            <td className="p-2.5 text-center font-mono text-slate-500">{g.expiry_date}</td>
+                            <td className="p-2.5 text-right font-mono font-bold">{g.received_qty.toLocaleString()} {selectedLotMaterial.unit || "KG."}</td>
+                            <td className="p-2.5 text-right font-mono font-extrabold text-emerald-800 bg-emerald-50/50">
+                              ฿{lotPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="p-2.5 text-right font-mono font-bold text-slate-900">
+                              ฿{lotTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="p-2.5 text-slate-500 text-[11px]">{g.receiver}</td>
+                          </tr>
+                        );
+                      })}
+                    {grns.filter(g => g.raw_material_id === selectedLotMaterial.id).length === 0 && (
+                      <tr>
+                        <td colSpan={8} className="p-6 text-center text-slate-400">
+                          ยังไม่มีประวัติการบันทึกรับเข้าแยกตามล็อตสำหรับสารเคมีนี้
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedLotMaterial(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl transition-all cursor-pointer"
+              >
+                ปิดหน้าต่าง
               </button>
             </div>
           </div>

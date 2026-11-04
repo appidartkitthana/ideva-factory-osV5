@@ -2,11 +2,14 @@ export interface Supplier {
   id: number;
   code: string;
   name: string;
+  company_name?: string;
   contact?: string;
   phone?: string;
   email?: string;
   address?: string;
-  status: string;
+  tax_id?: string;
+  status: string; // 'active' | 'suspended' | 'merged'
+  merged_into_id?: number;
   created_at?: string;
 }
 
@@ -37,23 +40,112 @@ export interface RawMaterial {
   id: number;
   code: string;
   name: string;
-  unit: string;
-  stock_qty: number;
-  min_stock: number;
-  status: string;
-  unit_price?: number;
+  category?: string;          // e.g. Essential Oil, Synthetic Fragrance, Solvents, Additives
+  unit?: string;               // Legacy or alias for default_unit
+  default_unit: string;       // e.g. KG, G, L, ML
+  base_unit: string;          // e.g. G for weight, ML for volume
+  standard_conversion?: number; // e.g. 1000 for KG -> G
   supplier?: string;
   supplier_id?: number;
   supplier_name?: string;
+  min_stock: number;          // Minimum Stock in Base Unit (G / ML)
+  stock_qty: number;          // Total Available Stock in Base Unit (G / ML)
+  storage_condition?: string; // e.g. Cool & Dry (15-25°C), Dark Bottle
+  status: string;             // 'active' | 'inactive'
+  unit_price?: number;        // Representative reference price per KG
+  coa_required?: boolean;     // Requires COA document
   image_url?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface RawMaterialLot {
+  id: number;
+  lot_id_code: string;        // System Generated Lot ID e.g. LOT-202611-001
+  material_id: number;
+  material_code?: string;
+  material_name?: string;
+  supplier_lot_no: string;    // Label on supplier package e.g. LOT-DE-8821
+  grn_id?: number;
+  grn_no: string;             // Receiving No. e.g. GRN-6162960
+  po_number?: string;
+  supplier_id?: number;
+  supplier_name: string;      // e.g. IDEVA / De Roma
+  received_date: string;      // YYYY-MM-DD
+  manufacture_date?: string;  // YYYY-MM-DD
+  expiry_date: string;        // YYYY-MM-DD
+  retest_date?: string;       // YYYY-MM-DD (วันที่ทดสอบซ้ำ)
+  received_qty: number;       // In Purchase Unit or Base Unit
+  remaining_qty: number;      // Remaining In Base Unit (G / ML)
+  purchase_unit: string;      // e.g. KG, G, L
+  unit_price_per_kg: number;  // Price in THB per 1 KG (or per 1 L)
+  total_purchase_value: number; // Purchase Quantity (KG) * Price (THB/KG)
+  currency: string;           // THB
+  qc_status: "Pending QC" | "Under Inspection" | "QC Passed" | "QC Failed" | "Quarantine";
+  appearance?: string;        // e.g. ของเหลว, ผง, เกล็ด
+  coa_url?: string;           // COA Attachment URL or base64
+  coa_status?: "Attached" | "Missing COA";
+  barcode?: string;           // Scannable barcode string
+  stock_status: "Available" | "Quarantine" | "Exhausted" | "Expired";
+  created_by?: string;
+  created_at?: string;
+}
+
+export interface QcChecklistItem {
+  id: string;
+  title: string;
+  title_en: string;
+  result: "PASS" | "FAIL" | "N/A";
+  remark?: string;
+}
+
+export interface QcInspection {
+  id: number;
+  grn_no: string;
+  material_id: number;
+  material_code: string;
+  material_name: string;
+  lot_id: number;
+  lot_code: string;
+  supplier_lot_no: string;
+  supplier_name: string;
+  received_qty: number;
+  purchase_unit: string;
+  expiry_date: string;
+  retest_date?: string;
+  appearance?: string;
+  coa_status: "Attached" | "Missing COA";
+  qc_status: "Pending QC" | "Under Inspection" | "QC Passed" | "QC Failed" | "Quarantine";
+  checklist: QcChecklistItem[];
+  inspector: string;
+  inspection_date: string;
+  approver?: string;
+  approval_date?: string;
+  remarks?: string;
+  label_pieces?: number;      // ชิ้นที่ e.g. 1 / 1
+}
+
+export interface AuditLog {
+  id: number;
+  user: string;
+  timestamp: string;
+  action: string;             // e.g. "CREATE_LOT", "QC_INSPECT", "STOCK_ISSUE", "NON_FEFO_OVERRIDE"
+  module: string;             // e.g. "RawMaterial", "IncomingQC", "GRN", "Production"
+  material_code?: string;
+  lot_number?: string;
+  old_value?: string;
+  new_value?: string;
+  reason?: string;
+  ref_doc?: string;
 }
 
 export interface BomMaterial {
   part?: string;
+  material_id?: number;
   material_code?: string;
   material_name: string;
-  quantity: number;
-  unit: string;
+  quantity: number;           // Quantity in G or default unit
+  unit: string;               // G, KG, ML, L
   notes?: string | null;
   unit_price?: number;
 }
@@ -74,6 +166,15 @@ export interface BomRecipe {
   estimated_unit_cost?: number;
 }
 
+export interface ProductionLotDeduction {
+  lot_id: number;
+  lot_code: string;
+  supplier_lot_no: string;
+  deduct_qty_g: number;
+  unit_price_per_kg: number;
+  lot_cost: number;
+}
+
 export interface ProductionOrder {
   id: number;
   code: string;
@@ -88,6 +189,8 @@ export interface ProductionOrder {
   customer_name?: string;
   product_name?: string;
   product_code?: string;
+  lot_deductions?: ProductionLotDeduction[];
+  total_material_cost?: number;
   created_at?: string;
 }
 
@@ -118,31 +221,37 @@ export interface PurchaseOrder {
   status: string;
   total_amount: number;
   items: PurchaseItem[];
-  material?: string; // for simple display/compatibility
-  qty?: number;      // for simple display/compatibility
-  price?: number;    // for simple display/compatibility
+  material?: string;
+  qty?: number;
+  price?: number;
 }
 
 export interface Grn {
   id: number;
-  code: string;
-  purchase_order_id: number;
+  code: string;               // e.g. GRN-6162960
+  purchase_order_id?: number;
   po_number?: string;
   raw_material_id: number;
-  supplier_name?: string;
-  lot_number: string;
+  material_code?: string;
+  material_name?: string;
+  supplier_name: string;
+  supplier_lot_no: string;    // Supplier Lot No.
+  lot_number?: string;        // Alias for supplier_lot_no
+  system_lot_code?: string;   // Generated Lot ID
+  manufacture_date?: string;
   expiry_date: string;
+  retest_date?: string;
   received_qty: number;
-  unit_price?: number;
-  unit?: string;
+  purchase_unit: string;
+  unit_price: number;         // THB per KG
+  total_amount: number;
+  invoice_number?: string;
+  coa_url?: string;
+  qc_status: "Pending QC" | "Under Inspection" | "QC Passed" | "QC Failed" | "Quarantine";
   receiver: string;
   receive_date: string;
+  receiving_remark?: string;
   status: string;
-  purchase?: string;  // display
-  material?: string;  // display
-  qty?: number;       // display
-  lot?: string;       // display
-  expiry?: string;    // display
 }
 
 export interface Precheck {
@@ -168,37 +277,27 @@ export interface InventoryPack {
   image_url?: string;
 }
 
-export interface PurchasePack {
-  id: number;
-  code: string;
-  supplier: string;
-  item: string;
-  qty: number;
-  price: number;
-  status: string;
-}
-
 export interface Project {
   id: number;
-  title: string;              // หัวเรื่อง (เช่น สบู่มังคุด)
-  project_type?: string;      // ประเภทโปรเจค
+  title: string;
+  project_type?: string;
   customer_id?: number;
-  customer: string;           // ลูกค้า
-  customer_status?: string;   // สถานะของลูกค้า
-  owner: string;              // เจ้าของ
-  price: number;              // ราคา
-  start_date: string;         // วันที่เริ่ม (เช่น 01/01/2024)
-  due_date: string;           // วันกำหนดส่ง (เช่น 12/01/2024)
-  progress: number;           // ความคืบหน้า (%)
-  status: string;             // สถานะ (เช่น รอดำเนินการ, กำลังผลิต, เสร็จสิ้น)
-  quantity: number;           // จำนวน (เช่น 500)
-  tags?: string[];            // คำกำกับ
-  description?: string;       // คำบรรยาย
-  product_code?: string;      // รหัสสินค้า
-  lot_number?: string;        // Lot Number (เช่น Lot6)
-  product_name?: string;      // ชื่อสินค้า (เช่น MANGOSTEEN ACNE SOAP/แมงโกสทีน แอคเน่ โซฟ)
-  details?: string;           // รายละเอียด (เช่น SMBS SREYMOM BEAUTY/เอสเอมบีเอส เสรยมอม บิวตี้)
-  category?: string;          // ประเภท
+  customer: string;
+  customer_status?: string;
+  owner: string;
+  price: number;
+  start_date: string;
+  due_date: string;
+  progress: number;
+  status: string;
+  quantity: number;
+  tags?: string[];
+  description?: string;
+  product_code?: string;
+  lot_number?: string;
+  product_name?: string;
+  details?: string;
+  category?: string;
   created_at?: string;
 }
 
@@ -220,8 +319,9 @@ export interface RequisitionSlip {
   date: string;
   department: string;
   requester: string;
-  items: { item_name: string; qty: number; unit: string }[];
+  items: { item_name: string; qty: number; unit: string; lot_code?: string; cost?: number }[];
   status: "approved" | "pending";
   purpose: string;
 }
+
 

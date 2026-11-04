@@ -21,6 +21,11 @@ export function getSupabaseConfig() {
         customKey = keyParam.trim();
         localStorage.setItem("custom_supabase_url", customUrl);
         localStorage.setItem("custom_supabase_key", customKey);
+        // Clean address bar so URL remains neat
+        try {
+          const cleanPath = window.location.pathname + window.location.hash;
+          window.history.replaceState({}, document.title, cleanPath);
+        } catch {}
       }
     } catch {}
   }
@@ -264,7 +269,7 @@ export async function processSyncQueue(): Promise<number> {
  */
 export const TABLE_ALLOWED_COLUMNS: Record<string, string[]> = {
   suppliers: [
-    "code", "name", "contact", "phone", "email", "address", "status", "created_at"
+    "code", "name", "company_name", "contact", "phone", "email", "address", "tax_id", "status", "merged_into_id", "created_at"
   ],
   customers: [
     "code", "name", "contact", "phone", "email", "tax_id", "address", "status", "created_at"
@@ -273,7 +278,16 @@ export const TABLE_ALLOWED_COLUMNS: Record<string, string[]> = {
     "code", "name", "type", "version", "status", "image_url", "category", "description", "unit_price", "stock_qty", "min_stock", "created_at"
   ],
   raw_materials: [
-    "code", "name", "unit", "stock_qty", "min_stock", "unit_price", "supplier_id", "supplier_name", "status", "image_url", "created_at"
+    "code", "name", "category", "default_unit", "base_unit", "standard_conversion", "unit", "stock_qty", "min_stock", "unit_price", "supplier_id", "supplier_name", "storage_condition", "status", "coa_required", "image_url", "created_at", "updated_at"
+  ],
+  raw_material_lots: [
+    "lot_id_code", "material_id", "material_code", "material_name", "supplier_lot_no", "grn_id", "grn_no", "po_number", "supplier_id", "supplier_name", "received_date", "manufacture_date", "expiry_date", "retest_date", "received_qty", "remaining_qty", "purchase_unit", "unit_price_per_kg", "total_purchase_value", "currency", "qc_status", "appearance", "coa_url", "coa_status", "barcode", "stock_status", "created_by", "created_at"
+  ],
+  qc_inspections: [
+    "grn_no", "material_id", "material_code", "material_name", "lot_id", "lot_code", "supplier_lot_no", "supplier_name", "received_qty", "purchase_unit", "expiry_date", "retest_date", "appearance", "coa_status", "qc_status", "checklist", "inspector", "inspection_date", "approver", "approval_date", "remarks", "label_pieces", "created_at"
+  ],
+  audit_logs: [
+    "user", "timestamp", "action", "module", "material_code", "lot_number", "old_value", "new_value", "reason", "ref_doc", "created_at"
   ],
   bom_recipes: [
     "product_id", "part_no", "version", "status", "estimated_unit_cost", "notes", "materials", "created_at"
@@ -383,9 +397,14 @@ export async function clientGetList(entity: string): Promise<any[]> {
       if (error) {
         console.warn(`[Supabase Fetch Error] table '${table}':`, error.message);
       } else if (data) {
-        rows = data;
+        // Merge with local pending records so new additions/edits never disappear before Supabase sync finishes
+        const local = getLocalTable(table);
+        const pendingLocal = local.filter((l: any) => 
+          l && !data.some((d: any) => String(d.id) === String(l.id) || (d.code && l.code && String(d.code).trim().toLowerCase() === String(l.code).trim().toLowerCase()))
+        );
+        rows = [...pendingLocal, ...data];
         remoteSuccess = true;
-        setLocalTable(table, data);
+        setLocalTable(table, rows);
       }
     } catch (e: any) {
       console.warn(`[Supabase Timeout/Error] table '${table}':`, e?.message);
@@ -495,45 +514,12 @@ export async function clientGetList(entity: string): Promise<any[]> {
 }
 
 /**
- * 100% DIRECT SUPABASE INSERT & UPDATE
+ * Sanitize Payload against Allowed Columns for Table
  */
-export async function clientSave(entity: string, id: number, data: any): Promise<number> {
-  const table = entity;
+export function sanitizePayload(entity: string, data: any): any {
   const rawInput = { ...data };
   delete rawInput.id;
 
-  // Specific data normalization
-  if (entity === "raw_materials") {
-    if (rawInput.supplier && !rawInput.supplier_name) {
-      rawInput.supplier_name = String(rawInput.supplier).trim();
-    }
-  }
-
-  // Type coercions and relation extractions
-  let materialsToSave: any[] | null = null;
-  let itemsToSave: any[] | null = null;
-
-  if (entity === "bom_recipes") {
-    if ("materials" in rawInput) {
-      materialsToSave = Array.isArray(rawInput.materials) ? rawInput.materials : [];
-      rawInput.materials = materialsToSave;
-    }
-  } else if (entity === "purchase_orders") {
-    if ("items" in rawInput) {
-      itemsToSave = Array.isArray(rawInput.items) ? rawInput.items : [];
-      rawInput.items = itemsToSave;
-    }
-  } else if (entity === "requisitions") {
-    if ("items" in rawInput) {
-      rawInput.items = Array.isArray(rawInput.items) ? rawInput.items : [];
-    }
-  } else if (entity === "projects") {
-    if ("tags" in rawInput) {
-      rawInput.tags = Array.isArray(rawInput.tags) ? rawInput.tags : [];
-    }
-  }
-
-  // Strict whitelist column sanitization: guarantees all defined columns are preserved and passed to Supabase
   const allowedCols = TABLE_ALLOWED_COLUMNS[entity];
   const cleanData: any = {};
   if (allowedCols) {
@@ -546,7 +532,7 @@ export async function clientSave(entity: string, id: number, data: any): Promise
     Object.assign(cleanData, rawInput);
   }
 
-  // Strict numeric column type coercions (ensures PostgreSQL numeric/decimal doesn't error)
+  // Type coercions
   if (entity === "raw_materials") {
     if ("stock_qty" in cleanData) cleanData.stock_qty = Number(cleanData.stock_qty) || 0;
     if ("min_stock" in cleanData) cleanData.min_stock = Number(cleanData.min_stock) || 0;
@@ -588,33 +574,157 @@ export async function clientSave(entity: string, id: number, data: any): Promise
     if ("estimated_unit_cost" in cleanData) cleanData.estimated_unit_cost = Number(cleanData.estimated_unit_cost) || 0;
   }
 
-  let savedId = id > 0 ? id : Date.now();
-  const recordToSave = { ...cleanData, id: savedId };
+  return cleanData;
+}
 
-  // 1. Immediately save into persistent local store so data is 100% saved right away
+/**
+ * 100% DIRECT SUPABASE SERVICE FUNCTIONS (STEP 3)
+ */
+export async function fetchTableData(table: string): Promise<any[]> {
+  const { data, error } = await supabase
+    .from(table)
+    .select("*")
+    .order("id", { ascending: false });
+
+  if (error) {
+    console.error(`[Supabase SELECT ERROR] table '${table}':`, error.message);
+    return clientGetList(table);
+  }
+  return data || [];
+}
+
+export async function insertTableData(table: string, payload: any): Promise<any> {
+  const clean = sanitizePayload(table, payload);
+  let currentPayload = { ...clean };
+  let lastError = null;
+  let resultRecord = null;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { data, error } = await supabase
+      .from(table)
+      .insert(currentPayload)
+      .select()
+      .single();
+
+    if (!error && data) {
+      resultRecord = data;
+      break;
+    }
+
+    lastError = error;
+    console.error(`[Supabase INSERT ERROR - Attempt ${attempt + 1}] table '${table}':`, error?.message);
+
+    const colMatch = error?.message?.match(/column ["']?([a_z0_9_]+)["']?/i) || error?.message?.match(/find the ["']?([a_z0_9_]+)["']? column/i);
+    if (colMatch && colMatch[1] && colMatch[1] in currentPayload) {
+      delete currentPayload[colMatch[1]];
+      continue;
+    }
+    break;
+  }
+
+  if (resultRecord) {
+    notifyGlobalSync();
+    return resultRecord;
+  }
+  if (lastError) throw lastError;
+  return null;
+}
+
+export async function updateTableData(table: string, id: number | string, payload: any): Promise<any> {
+  const numId = Number(id) || id;
+  const clean = sanitizePayload(table, payload);
+  let currentPayload = { ...clean };
+  let lastError = null;
+  let resultRecord = null;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { data, error } = await supabase
+      .from(table)
+      .update(currentPayload)
+      .eq("id", numId)
+      .select()
+      .single();
+
+    if (!error) {
+      resultRecord = data || { id: numId, ...currentPayload };
+      break;
+    }
+
+    lastError = error;
+    console.error(`[Supabase UPDATE ERROR - Attempt ${attempt + 1}] table '${table}' id=${numId}:`, error?.message);
+
+    const colMatch = error?.message?.match(/column ["']?([a_z0_9_]+)["']?/i) || error?.message?.match(/find the ["']?([a_z0_9_]+)["']? column/i);
+    if (colMatch && colMatch[1] && colMatch[1] in currentPayload) {
+      delete currentPayload[colMatch[1]];
+      continue;
+    }
+    break;
+  }
+
+  if (resultRecord) {
+    notifyGlobalSync();
+    return resultRecord;
+  }
+  if (lastError) throw lastError;
+  return null;
+}
+
+export async function deleteTableData(table: string, id: number | string): Promise<any> {
+  const numId = Number(id) || id;
+  const { data, error } = await supabase
+    .from(table)
+    .delete()
+    .eq("id", numId)
+    .select();
+
+  if (error) {
+    console.error(`[Supabase DELETE ERROR] table '${table}' id=${id}:`, error.message);
+    throw error;
+  }
+
+  notifyGlobalSync();
+  return data;
+}
+
+/**
+ * 100% DIRECT SUPABASE INSERT & UPDATE
+ */
+export async function clientSave(entity: string, id: number, data: any): Promise<number> {
+  const table = entity;
+  const rawInput = { ...data };
+  const numId = Number(id) || 0;
+
+  // Relation extractions
+  let materialsToSave: any[] | null = null;
+  let itemsToSave: any[] | null = null;
+
+  if (entity === "bom_recipes" && "materials" in rawInput) {
+    materialsToSave = Array.isArray(rawInput.materials) ? rawInput.materials : [];
+  } else if (entity === "purchase_orders" && "items" in rawInput) {
+    itemsToSave = Array.isArray(rawInput.items) ? rawInput.items : [];
+  }
+
+  let savedId = numId;
+  const recordToSave = { ...rawInput, id: numId > 0 ? numId : Date.now() };
+
+  // 1. Save into local cache for instant UI feedback
   saveLocalRecord(table, recordToSave);
 
-  // 2. Write to Supabase with auto-queue on offline/paused
+  // 2. Perform remote Supabase operation directly
   try {
-    if (id > 0) {
-      const { error } = await withTimeout(supabase.from(table).update(cleanData).eq("id", id), 3500);
-      if (error) {
-        queueSyncItem({ action: "save", table, record: recordToSave });
-      }
+    if (numId > 0) {
+      const updated = await updateTableData(table, numId, rawInput);
+      if (updated?.id) savedId = Number(updated.id);
     } else {
-      const { data: inserted, error } = await withTimeout(
-        supabase.from(table).insert(cleanData).select("id").single(),
-        3500
-      );
-      if (!error && inserted) {
-        deleteLocalRecord(table, savedId);
-        savedId = inserted.id;
+      const inserted = await insertTableData(table, rawInput);
+      if (inserted?.id) {
+        deleteLocalRecord(table, recordToSave.id);
+        savedId = Number(inserted.id);
         saveLocalRecord(table, { ...recordToSave, id: savedId });
-      } else {
-        queueSyncItem({ action: "save", table, record: recordToSave });
       }
     }
-  } catch {
+  } catch (e: any) {
+    console.warn(`[Supabase Save Fallback/Queue] '${table}':`, e?.message || e);
     queueSyncItem({ action: "save", table, record: recordToSave });
   }
 
@@ -661,17 +771,17 @@ export async function clientSave(entity: string, id: number, data: any): Promise
   }
 
   // Automatically update stock on GRN save directly in Supabase
-  if (entity === "grns" && id === 0) {
-    const rawMaterialId = parseInt(cleanData.raw_material_id || 0);
-    const receivedQty = parseFloat(cleanData.received_qty || 0);
+  if (entity === "grns" && numId === 0) {
+    const rawMaterialId = parseInt(data.raw_material_id || 0);
+    const receivedQty = parseFloat(data.received_qty || 0);
     if (rawMaterialId && receivedQty) {
       try {
-        const { data: mat, error: matErr } = await supabase
+        const { data: mat } = await supabase
           .from("raw_materials")
           .select("stock_qty")
           .eq("id", rawMaterialId)
           .single();
-        if (!matErr && mat) {
+        if (mat) {
           const newStock = parseFloat(String(mat.stock_qty || 0)) + receivedQty;
           await supabase.from("raw_materials").update({ stock_qty: newStock }).eq("id", rawMaterialId);
         }
@@ -693,65 +803,42 @@ export async function clientDelete(entity: string, id: number | string): Promise
   const table = entity;
   const numId = Number(id) || id;
 
-  // 1. Immediately delete from local live store so UI is always responsive
+  // 1. Delete from local store for instant UI feedback
   deleteLocalRecord(table, numId);
 
-  // Local cascade deletions
-  if (entity === "products") {
-    const boms = getLocalTable("bom_recipes");
-    setLocalTable("bom_recipes", boms.filter((b: any) => b.product_id !== numId));
-    const pos = getLocalTable("production_orders");
-    setLocalTable("production_orders", pos.filter((po: any) => po.product_id !== numId));
-  } else if (entity === "customers") {
-    const projs = getLocalTable("projects");
-    setLocalTable("projects", projs.filter((p: any) => p.customer_id !== numId));
-    const pos = getLocalTable("production_orders");
-    setLocalTable("production_orders", pos.filter((po: any) => po.customer_id !== numId));
-  } else if (entity === "raw_materials") {
-    const grns = getLocalTable("grns");
-    setLocalTable("grns", grns.filter((g: any) => g.raw_material_id !== numId));
-  }
-
-  // 2. Attempt remote delete on Supabase with timeout
+  // 2. Cascade deletions on child tables
   try {
     if (entity === "bom_recipes") {
-      await withTimeout(supabase.from("bom_items").delete().eq("bom_id", numId), 3500);
+      await supabase.from("bom_items").delete().eq("bom_id", numId);
     } else if (entity === "purchase_orders") {
-      await withTimeout(supabase.from("purchase_order_items").delete().eq("purchase_order_id", numId), 3500);
-      await withTimeout(supabase.from("grns").update({ purchase_order_id: null }).eq("purchase_order_id", numId), 3500);
+      await supabase.from("purchase_order_items").delete().eq("purchase_order_id", numId);
+      await supabase.from("grns").update({ purchase_order_id: null }).eq("purchase_order_id", numId);
     } else if (entity === "production_orders") {
-      await withTimeout(supabase.from("packing_orders").delete().eq("production_order_id", numId), 3500);
+      await supabase.from("packing_orders").delete().eq("production_order_id", numId);
     } else if (entity === "products") {
-      const { data: bData } = await withTimeout(supabase.from("bom_recipes").select("id").eq("product_id", numId), 3500);
+      const { data: bData } = await supabase.from("bom_recipes").select("id").eq("product_id", numId);
       const bIds = bData?.map((b: any) => b.id) || [];
       if (bIds.length > 0) {
-        await withTimeout(supabase.from("bom_items").delete().in("bom_id", bIds), 3500);
+        await supabase.from("bom_items").delete().in("bom_id", bIds);
       }
-      await withTimeout(supabase.from("bom_recipes").delete().eq("product_id", numId), 3500);
-      await withTimeout(supabase.from("production_orders").delete().eq("product_id", numId), 3500);
+      await supabase.from("bom_recipes").delete().eq("product_id", numId);
+      await supabase.from("production_orders").delete().eq("product_id", numId);
     } else if (entity === "customers") {
-      await withTimeout(supabase.from("projects").delete().eq("customer_id", numId), 3500);
-      await withTimeout(supabase.from("production_orders").delete().eq("customer_id", numId), 3500);
+      await supabase.from("projects").delete().eq("customer_id", numId);
+      await supabase.from("production_orders").delete().eq("customer_id", numId);
     } else if (entity === "raw_materials") {
-      await withTimeout(supabase.from("grns").delete().eq("raw_material_id", numId), 3500);
-      await withTimeout(supabase.from("bom_items").delete().eq("raw_material_id", numId), 3500);
-      await withTimeout(supabase.from("purchase_order_items").delete().eq("raw_material_id", numId), 3500);
+      await supabase.from("raw_material_lots").delete().eq("material_id", numId);
+      await supabase.from("qc_inspections").delete().eq("material_id", numId);
+      await supabase.from("grns").delete().eq("raw_material_id", numId);
+      await supabase.from("bom_items").delete().eq("raw_material_id", numId);
+      await supabase.from("purchase_order_items").delete().eq("raw_material_id", numId);
     } else if (entity === "suppliers") {
-      await withTimeout(supabase.from("raw_materials").update({ supplier_id: null }).eq("supplier_id", numId), 3500);
+      await supabase.from("raw_materials").update({ supplier_id: null }).eq("supplier_id", numId);
     }
 
-    const { error } = await withTimeout(supabase.from(table).delete().eq("id", numId), 3500);
-    if (error) {
-      console.warn(`[Supabase Delete Warning] Table ${table} id ${numId}:`, error.message);
-      queueSyncItem({
-        id: `del_${table}_${numId}_${Date.now()}`,
-        action: "delete",
-        table,
-        recordId: numId
-      });
-    }
+    await deleteTableData(table, numId);
   } catch (err: any) {
-    console.warn(`[Supabase Delete Offline, Queued] ${entity} ${numId}:`, err);
+    console.warn(`[Supabase Delete Queued] ${entity} ${numId}:`, err?.message || err);
     queueSyncItem({
       id: `del_${table}_${numId}_${Date.now()}`,
       action: "delete",

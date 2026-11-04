@@ -45,10 +45,13 @@ export default function Sidebar({ activePage, setActivePage, isOpen, setIsOpen, 
     { section: "จัดซื้อและคลัง", items: [
       { id: "purchase", label: "จัดซื้อวัตถุดิบ", icon: <ShoppingCart className="w-4 h-4" /> },
       { id: "grn", label: "รับเข้าคลัง (GRN)", icon: <Truck className="w-4 h-4" /> },
+      { id: "incoming_qc", label: "ตรวจรับคุณภาพ (Incoming QC)", icon: <ShieldCheck className="w-4 h-4" /> },
       { id: "inventory", label: "การจัดการคลังสินค้า", icon: <Warehouse className="w-4 h-4" /> }
     ]},
-    { section: "รายงาน", items: [
-      { id: "report", label: "รายงานสรุป", icon: <LineChart className="w-4 h-4" /> }
+    { section: "รายงาน & ประวัติ", items: [
+      { id: "report", label: "รายงานสรุป", icon: <LineChart className="w-4 h-4" /> },
+      { id: "audit_log", label: "ประวัติการทำงาน (Audit Log)", icon: <Lock className="w-4 h-4" /> },
+      { id: "test_cases", label: "ทดสอบระบบ (Test Suite)", icon: <Database className="w-4 h-4" /> }
     ]},
     { section: "คู่มือและช่วยเหลือ", items: [
       { id: "manual", label: "คู่มือการใช้งานแบบละเอียด", icon: <BookOpen className="w-4 h-4" /> }

@@ -31,10 +31,16 @@ import {
   InventoryPage, 
   ReportPage 
 } from "./components/OtherPages";
+import IncomingQcPage from "./components/IncomingQcPage";
+import AuditLogPage from "./components/AuditLogPage";
+import TestCasesPage from "./components/TestCasesPage";
 import { 
   Customer, 
   Product, 
   RawMaterial, 
+  RawMaterialLot,
+  QcInspection,
+  AuditLog,
   BomRecipe, 
   ProductionOrder, 
   PackingOrder, 
@@ -126,6 +132,9 @@ export default function App() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
+  const [rawMaterialLots, setRawMaterialLots] = useState<RawMaterialLot[]>([]);
+  const [qcInspections, setQcInspections] = useState<QcInspection[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [bomRecipes, setBomRecipes] = useState<BomRecipe[]>([]);
   const [productionOrders, setProductionOrders] = useState<ProductionOrder[]>([]);
   const [packingOrders, setPackingOrders] = useState<PackingOrder[]>([]);
@@ -261,6 +270,9 @@ export default function App() {
         custs,
         prods,
         mats,
+        lotsList,
+        qcList,
+        logList,
         recipes,
         pos,
         packOrders,
@@ -276,6 +288,9 @@ export default function App() {
         clientGetList("customers"),
         clientGetList("products"),
         clientGetList("raw_materials"),
+        clientGetList("raw_material_lots"),
+        clientGetList("qc_inspections"),
+        clientGetList("audit_logs"),
         clientGetList("bom_recipes"),
         clientGetList("production_orders"),
         clientGetList("packing_orders"),
@@ -307,6 +322,9 @@ export default function App() {
       setCustomers(custs);
       setProducts(prods);
       setRawMaterials(mats);
+      setRawMaterialLots(lotsList);
+      setQcInspections(qcList);
+      setAuditLogs(logList);
       setBomRecipes(enrichedRecipes);
       setProductionOrders(pos);
       setPackingOrders(packOrders);
@@ -484,21 +502,86 @@ export default function App() {
     }
   };
 
-  // Triggered when GRN is created (adds chemicals to stock)
+  // Triggered when GRN is created (adds chemical lot and sends to QC)
   const handleAddGrn = async (grn: any) => {
-    await handleSave("grns", grn, "บันทึกใบ GRN และอัปเดตสต็อกคงคลังสำเร็จ!");
+    await handleSave("grns", grn, "บันทึกใบ GRN และสร้างล็อตรับเข้าเพื่อส่งเข้าตรวจ QC สำเร็จ!");
     
-    // Explicitly update raw_material stock_qty in database / memory
     const matId = Number(grn.raw_material_id);
     const qty = parseFloat(grn.received_qty) || 0;
-    if (matId && qty > 0) {
-      const mat = rawMaterials.find(rm => rm.id === matId);
-      if (mat) {
-        const newStock = parseFloat(String(mat.stock_qty || 0)) + qty;
-        const updatedMat = { ...mat, stock_qty: newStock };
-        await clientSave("raw_materials", mat.id, updatedMat);
-        await loadAllData();
-      }
+    const mat = rawMaterials.find(rm => rm.id === matId);
+    
+    if (mat) {
+      const lotCode = `LOT-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${String(rawMaterialLots.length + 1).padStart(3, "0")}`;
+      const supplierLotNo = grn.supplier_lot_no || grn.lot_number || `LOT-SUP-${Date.now().toString().slice(-4)}`;
+      const unitPricePerKg = Number(grn.unit_price) || Number(mat.unit_price) || 1000;
+      const totalVal = (qty * unitPricePerKg);
+
+      // 1. Save RawMaterialLot
+      const newLot: Partial<RawMaterialLot> = {
+        lot_id_code: lotCode,
+        material_id: mat.id,
+        material_code: mat.code,
+        material_name: mat.name,
+        supplier_lot_no: supplierLotNo,
+        grn_no: grn.code || `GRN-${Date.now().toString().slice(-6)}`,
+        po_number: grn.po_number || "",
+        supplier_name: grn.supplier_name || mat.supplier_name || mat.supplier || "IDEVA / De Roma",
+        received_date: grn.receive_date || new Date().toISOString().slice(0, 10),
+        expiry_date: grn.expiry_date || new Date(Date.now() + 365*24*60*60*1000).toISOString().slice(0, 10),
+        received_qty: qty,
+        remaining_qty: qty * (mat.unit?.toLowerCase().includes("kg") ? 1000 : 1), // Base unit G or ML
+        purchase_unit: grn.unit || mat.default_unit || "KG.",
+        unit_price_per_kg: unitPricePerKg,
+        total_purchase_value: totalVal,
+        currency: "THB",
+        qc_status: "Pending QC",
+        appearance: grn.appearance || "ของเหลว ใส ไม่มีตะกอน",
+        coa_status: grn.coa_url ? "Attached" : "Missing COA",
+        barcode: `BAR-${mat.code}-${supplierLotNo}`,
+        stock_status: "Quarantine", // Until QC Passed!
+        created_by: grn.receiver || "คลังสินค้า"
+      };
+
+      await clientSave("raw_material_lots", 0, newLot);
+
+      // 2. Save QcInspection entry
+      const newQc: Partial<QcInspection> = {
+        grn_no: grn.code || `GRN-${Date.now().toString().slice(-6)}`,
+        material_id: mat.id,
+        material_code: mat.code,
+        material_name: mat.name,
+        lot_id: Date.now(),
+        lot_code: lotCode,
+        supplier_lot_no: supplierLotNo,
+        supplier_name: grn.supplier_name || mat.supplier_name || mat.supplier || "IDEVA / De Roma",
+        received_qty: qty,
+        purchase_unit: grn.unit || mat.default_unit || "KG.",
+        expiry_date: grn.expiry_date || new Date(Date.now() + 365*24*60*60*1000).toISOString().slice(0, 10),
+        appearance: grn.appearance || "ของเหลว ใส ไม่มีตะกอน",
+        coa_status: grn.coa_url ? "Attached" : "Missing COA",
+        qc_status: "Pending QC",
+        inspector: "สุรตน์",
+        inspection_date: new Date().toISOString().slice(0, 10),
+        approver: "ดน",
+        remarks: "รอดำเนินการสุ่มตรวจวิเคราะห์ตามมาตรฐานโรงงาน"
+      };
+
+      await clientSave("qc_inspections", 0, newQc);
+
+      // 3. Save Audit Log
+      await clientSave("audit_logs", 0, {
+        user: grn.receiver || "คลังสินค้า",
+        timestamp: new Date().toISOString(),
+        action: "GRN_RECEIVE_LOT",
+        module: "GRN",
+        material_code: mat.code,
+        lot_number: supplierLotNo,
+        new_value: `${qty} ${grn.unit || 'KG.'} @ ฿${unitPricePerKg}/KG`,
+        reason: "รับเข้าวัตถุดิบล็อตใหม่และส่งรอตรวจ QC",
+        ref_doc: grn.code
+      });
+
+      await loadAllData();
     }
   };
 
@@ -703,6 +786,53 @@ export default function App() {
             }}
           />
         );
+      case "incoming_qc":
+        return (
+          <IncomingQcPage 
+            qcInspections={qcInspections}
+            lots={rawMaterialLots}
+            rawMaterials={rawMaterials}
+            grns={grns}
+            onSaveQcInspection={async (qc) => handleSave("qc_inspections", qc, "บันทึกผลการอนุมัติ QC เรียบร้อยแล้ว!")}
+            onUpdateLotStatus={async (lotId, qcStatus, stockStatus) => {
+              const targetLot = rawMaterialLots.find(l => l.id === lotId || String(l.id) === String(lotId));
+              if (targetLot) {
+                const updated = { ...targetLot, qc_status: qcStatus, stock_status: stockStatus };
+                await clientSave("raw_material_lots", targetLot.id, updated);
+                
+                // If QC Passed, update master raw_materials stock
+                if (qcStatus === "QC Passed") {
+                  const mat = rawMaterials.find(rm => rm.id === targetLot.material_id);
+                  if (mat) {
+                    const addQtyG = targetLot.remaining_qty || (targetLot.received_qty * 1000);
+                    const updatedMat = { ...mat, stock_qty: Number(mat.stock_qty || 0) + addQtyG };
+                    await clientSave("raw_materials", mat.id, updatedMat);
+                  }
+                }
+                await loadAllData();
+              }
+            }}
+            onLogAudit={async (log) => {
+              await clientSave("audit_logs", 0, log);
+              await loadAllData();
+            }}
+          />
+        );
+      case "audit_log":
+        return (
+          <AuditLogPage 
+            logs={auditLogs}
+          />
+        );
+      case "test_cases":
+        return (
+          <TestCasesPage 
+            rawMaterials={rawMaterials}
+            lots={rawMaterialLots}
+            suppliers={suppliers}
+            qcInspections={qcInspections}
+          />
+        );
       case "report":
         return (
           <ReportPage 
@@ -848,6 +978,22 @@ export default function App() {
         />
 
         {/* Automatic Connection & Sync Status Banner */}
+        {dbHealth.tested && dbHealth.online && (
+          <div className="bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-900 text-white px-4 py-1.5 sm:px-6 shadow-xs border-b border-emerald-500/30">
+            <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="font-bold text-emerald-200">
+                  🔒 ล็อกการเชื่อมต่อ Supabase อัตโนมัติสมบูรณ์ (100% Realtime Active - Project: {dbHealth.projectId})
+                </span>
+              </div>
+              <span className="text-[10px] text-emerald-300 hidden md:inline">
+                ไม่ว่าจะเปิดที่ไหนหรือก๊อบลิงค์ไปเครื่องใด ข้อมูลจะซิงค์ตรงกันอัตโนมัติ
+              </span>
+            </div>
+          </div>
+        )}
+
         {dbHealth.tested && !dbHealth.online && (
           <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white px-4 py-2.5 sm:px-6 shadow-sm border-b border-blue-700/40">
             <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-2.5">
