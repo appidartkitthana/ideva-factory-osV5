@@ -411,14 +411,16 @@ export async function clientGetList(entity: string): Promise<any[]> {
       if (error) {
         console.warn(`[Supabase Fetch Error] table '${table}':`, error.message);
       } else if (data) {
-        // Merge with local pending records so new additions/edits never disappear before Supabase sync finishes
-        const local = getLocalTable(table);
-        const pendingLocal = local.filter((l: any) => 
-          l && !data.some((d: any) => String(d.id) === String(l.id) || (d.code && l.code && String(d.code).trim().toLowerCase() === String(l.code).trim().toLowerCase()))
-        );
-        rows = [...pendingLocal, ...data];
+        // When online, Supabase is the 100% source of truth across all devices and locations!
+        const queue = getSyncQueue();
+        const pendingQueue = queue
+          .filter((q) => q.table === table && q.action === "save" && q.record)
+          .map((q) => q.record)
+          .filter((r) => r && !data.some((d: any) => String(d.id) === String(r.id) || (d.code && r.code && String(d.code).trim().toLowerCase() === String(r.code).trim().toLowerCase())));
+
+        rows = [...pendingQueue, ...data];
         remoteSuccess = true;
-        setLocalTable(table, rows);
+        setLocalTable(table, data);
       }
     } catch (e: any) {
       console.warn(`[Supabase Timeout/Error] table '${table}':`, e?.message);
