@@ -17,6 +17,7 @@ import {
   testSupabaseConnection,
   getSupabaseConfig,
   updateSupabaseConfig,
+  resetSupabaseConfig,
   processSyncQueue,
   getSyncQueue,
   seedDatabaseTables,
@@ -180,23 +181,32 @@ export default function App() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // Actively test Supabase connection health
+  // Actively test Supabase connection health with auto-healing fallback
   const verifyDbHealth = async () => {
     setIsRetryingDb(true);
     try {
-      const res = await testSupabaseConnection();
       const cfg = getSupabaseConfig();
+      let res = await testSupabaseConnection();
+
+      // Auto-Healing: If custom config stored in localStorage failed, try resetting to embedded default credentials
+      if (!res.success && cfg.isCustom) {
+        console.warn("Custom localStorage Supabase config failed, auto-recovering to embedded defaults...");
+        resetSupabaseConfig();
+        res = await testSupabaseConnection();
+      }
+
+      const activeCfg = getSupabaseConfig();
       if (res.success) {
         setDbHealth({
           tested: true,
           online: true,
-          projectId: cfg.projectId,
-          url: cfg.url
+          projectId: activeCfg.projectId,
+          url: activeCfg.url
         });
         setDbStatus({
           useMySQL: false,
           host: "Supabase Realtime",
-          database: cfg.projectId,
+          database: activeCfg.projectId,
           user: "client-direct"
         });
         return true;
@@ -207,21 +217,21 @@ export default function App() {
           errorType: res.errorType || "GENERIC",
           message: res.message,
           details: res.details,
-          projectId: cfg.projectId,
-          url: cfg.url
+          projectId: activeCfg.projectId,
+          url: activeCfg.url
         });
         setDbStatus(null);
         return false;
       }
     } catch (e: any) {
-      const cfg = getSupabaseConfig();
+      const activeCfg = getSupabaseConfig();
       setDbHealth({
         tested: true,
         online: false,
         errorType: "FAILED_TO_FETCH",
         message: e?.message || "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ฐานข้อมูลได้",
-        projectId: cfg.projectId,
-        url: cfg.url
+        projectId: activeCfg.projectId,
+        url: activeCfg.url
       });
       setDbStatus(null);
       return false;

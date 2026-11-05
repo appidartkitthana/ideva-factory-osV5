@@ -2,9 +2,19 @@ import { createClient } from "@supabase/supabase-js";
 import { SAMPLE_SEED_DATA } from "./seedData";
 import { EMBEDDED_SUPABASE_URL, EMBEDDED_SUPABASE_KEY } from "./supabaseCredentials";
 
+const getValidEnvVar = (val: any): string => {
+  if (!val || typeof val !== "string") return "";
+  const trimmed = val.trim();
+  if (trimmed === "undefined" || trimmed === "null" || trimmed.includes("YOUR_SUPABASE")) return "";
+  return trimmed;
+};
+
+const envUrl = getValidEnvVar((import.meta as any).env?.VITE_SUPABASE_URL);
+const envKey = getValidEnvVar((import.meta as any).env?.VITE_SUPABASE_KEY) || getValidEnvVar((import.meta as any).env?.VITE_SUPABASE_ANON_KEY);
+
 // Default credentials hardcoded & embedded directly into system build
-const DEFAULT_SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || EMBEDDED_SUPABASE_URL;
-const DEFAULT_SUPABASE_KEY = (import.meta as any).env?.VITE_SUPABASE_KEY || (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || EMBEDDED_SUPABASE_KEY;
+const DEFAULT_SUPABASE_URL = envUrl || EMBEDDED_SUPABASE_URL;
+const DEFAULT_SUPABASE_KEY = envKey || EMBEDDED_SUPABASE_KEY;
 
 export function getSupabaseConfig() {
   let customUrl = "";
@@ -16,7 +26,7 @@ export function getSupabaseConfig() {
       const params = new URLSearchParams(window.location.search);
       const urlParam = params.get("supabase_url") || params.get("db_url");
       const keyParam = params.get("supabase_key") || params.get("db_key");
-      if (urlParam && keyParam) {
+      if (urlParam && keyParam && urlParam.trim() !== "undefined" && keyParam.trim() !== "undefined") {
         customUrl = urlParam.trim();
         customKey = keyParam.trim();
         localStorage.setItem("custom_supabase_url", customUrl);
@@ -33,8 +43,12 @@ export function getSupabaseConfig() {
   // 2. Read from localStorage
   if (!customUrl || !customKey) {
     try {
-      customUrl = localStorage.getItem("custom_supabase_url") || "";
-      customKey = localStorage.getItem("custom_supabase_key") || "";
+      const storedUrl = localStorage.getItem("custom_supabase_url");
+      const storedKey = localStorage.getItem("custom_supabase_key");
+      if (storedUrl && storedKey && storedUrl.trim() !== "undefined" && storedKey.trim() !== "undefined") {
+        customUrl = storedUrl.trim();
+        customKey = storedKey.trim();
+      }
     } catch {}
   }
 
