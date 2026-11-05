@@ -273,35 +273,28 @@ export default function App() {
     }
   };
 
-  // Refresh all tables from real-time database directly
+  // Refresh all tables from real-time database with batched mobile-friendly queries
   const loadAllData = async () => {
     try {
-      const [
-        custs,
-        prods,
-        mats,
-        lotsList,
-        qcList,
-        logList,
-        recipes,
-        pos,
-        packOrders,
-        pOrders,
-        grnLogs,
-        checks,
-        packs,
-        projs,
-        sups,
-        semiList,
-        reqList
-      ] = await Promise.all([
+      // Chunk 1: Core Master Tables
+      const [custs, prods, mats, sups] = await Promise.all([
         clientGetList("customers"),
         clientGetList("products"),
         clientGetList("raw_materials"),
+        clientGetList("suppliers")
+      ]);
+
+      // Chunk 2: Inventory Lots, QC, Audit Logs, BOM Recipes & Semi Goods
+      const [lotsList, qcList, logList, recipes, semiList] = await Promise.all([
         clientGetList("raw_material_lots"),
         clientGetList("qc_inspections"),
         clientGetList("audit_logs"),
         clientGetList("bom_recipes"),
+        clientGetList("semi_finished_goods")
+      ]);
+
+      // Chunk 3: Orders, GRNs, Prechecks, Projects, Requisitions & Packs
+      const [pos, packOrders, pOrders, grnLogs, checks, packs, projs, reqList] = await Promise.all([
         clientGetList("production_orders"),
         clientGetList("packing_orders"),
         clientGetList("purchase_orders"),
@@ -309,14 +302,26 @@ export default function App() {
         clientGetList("prechecks"),
         clientGetList("inventory_pack"),
         clientGetList("projects"),
-        clientGetList("suppliers"),
-        clientGetList("semi_finished_goods"),
         clientGetList("requisitions")
       ]);
 
+      // Auto-Seed Check: If database is completely empty on first load on a new device, seed initial factory data
+      if (
+        custs.length === 0 &&
+        prods.length === 0 &&
+        mats.length === 0 &&
+        sups.length === 0 &&
+        !localStorage.getItem("factory_db_autoseeded")
+      ) {
+        localStorage.setItem("factory_db_autoseeded", "true");
+        console.log("Empty Supabase database detected on fresh device boot, auto-seeding sample factory data...");
+        seedDatabaseTables().then(() => loadAllData());
+        return;
+      }
+
       // Enrich BOM Recipes with Product Info (code, name, type)
-      const enrichedRecipes = recipes.map(r => {
-        const matchedProd = prods.find(p => p.id === r.product_id);
+      const enrichedRecipes = recipes.map((r) => {
+        const matchedProd = prods.find((p) => p.id === r.product_id);
         return {
           ...r,
           materials: Array.isArray(r.materials) ? r.materials : [],
@@ -424,26 +429,21 @@ export default function App() {
     window.addEventListener("focus", handleFocus);
     document.addEventListener("visibilitychange", handleFocus);
 
-    // ⚡ 6. Continuous 2-Way Active Database Heartbeat & Auto-Polling (Runs every 3 seconds)
-    // Ensures ALL connected devices and browsers fetch fresh Supabase data continuously,
-    // even if WebSockets fluctuate or network drops temporarily.
+    // ⚡ 6. Periodic Background Data Refresh & Offline Queue Sync (Runs every 15s)
     const syncInterval = setInterval(async () => {
       const currentQueue = getSyncQueue();
       setSyncPendingCount(currentQueue.length);
 
-      // Verify connection in background
-      const ok = await verifyDbHealth();
-      if (ok) {
-        if (currentQueue.length > 0) {
-          const synced = await processSyncQueue();
-          if (synced > 0) {
-            setSyncPendingCount(getSyncQueue().length);
-          }
+      if (currentQueue.length > 0) {
+        const synced = await processSyncQueue();
+        if (synced > 0) {
+          setSyncPendingCount(getSyncQueue().length);
+          await loadAllData();
         }
-        // Continuous live refresh from Supabase across all devices
+      } else {
         await loadAllData();
       }
-    }, 3000);
+    }, 15000);
 
     return () => {
       clearInterval(syncInterval);

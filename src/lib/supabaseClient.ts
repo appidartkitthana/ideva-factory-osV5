@@ -79,8 +79,39 @@ export function getShareableDatabaseLink(): string {
 }
 
 let currentConfig = getSupabaseConfig();
-let cleanUrl = currentConfig.url.replace(/\/rest\/v1\/?$/, "");
-export let supabase = createClient(cleanUrl, currentConfig.key);
+let activeClientUrl = currentConfig.url.replace(/\/rest\/v1\/?$/, "");
+let activeClientKey = currentConfig.key;
+
+export let supabase = createClient(activeClientUrl, activeClientKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: false
+  }
+});
+
+function ensureSupabaseClient(url: string, key: string) {
+  const clean = url.trim().replace(/\/rest\/v1\/?$/, "");
+  if (clean === activeClientUrl && key.trim() === activeClientKey && supabase) {
+    return supabase;
+  }
+  try {
+    if (supabase) {
+      supabase.removeAllChannels();
+    }
+  } catch {}
+
+  activeClientUrl = clean;
+  activeClientKey = key.trim();
+  supabase = createClient(clean, activeClientKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: false
+    }
+  });
+  return supabase;
+}
 
 export const updateSupabaseConfig = (url: string, key: string) => {
   const clean = url.trim().replace(/\/rest\/v1\/?$/, "");
@@ -94,21 +125,31 @@ export const updateSupabaseConfig = (url: string, key: string) => {
     isCustom: true,
     projectId: clean.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || "custom"
   };
-  supabase = createClient(clean, key.trim());
+  ensureSupabaseClient(clean, key.trim());
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("supabase_config_changed", { detail: currentConfig }));
   }
 };
 
 export const resetSupabaseConfig = () => {
+  const hadCustom = !!(
+    localStorage.getItem("custom_supabase_url") || localStorage.getItem("custom_supabase_key")
+  );
   try {
     localStorage.removeItem("custom_supabase_url");
     localStorage.removeItem("custom_supabase_key");
   } catch {}
+
   currentConfig = getSupabaseConfig();
-  cleanUrl = currentConfig.url.replace(/\/rest\/v1\/?$/, "");
-  supabase = createClient(cleanUrl, currentConfig.key);
-  if (typeof window !== "undefined") {
+  const clean = currentConfig.url.replace(/\/rest\/v1\/?$/, "");
+
+  // If already running on target URL & Key, do not recreate or emit redundant change events
+  if (clean === activeClientUrl && currentConfig.key === activeClientKey) {
+    return;
+  }
+
+  ensureSupabaseClient(clean, currentConfig.key);
+  if (typeof window !== "undefined" && hadCustom) {
     window.dispatchEvent(new CustomEvent("supabase_config_changed", { detail: currentConfig }));
   }
 };
@@ -351,89 +392,63 @@ export const TABLE_ALLOWED_COLUMNS: Record<string, string[]> = {
  * - Queries and maps all tables and columns directly.
  */
 export async function clientGetList(entity: string): Promise<any[]> {
-  const table = entity;
   try {
-    // Special handling for semi_finished_goods direct from table
-    if (entity === "semi_finished_goods") {
-      try {
-        const { data, error } = await withTimeout(
-          supabase.from("semi_finished_goods").select("*").order("id", { ascending: false }),
-          8000
-        );
-        if (error) {
-          console.warn(`[Supabase Fetch Error] semi_finished_goods:`, error.message);
-        } else if (data) {
-          setLocalTable("semi_finished_goods", data);
-          return data;
-        }
-      } catch (err: any) {
-        console.warn(`[Supabase Timeout/Error] semi_finished_goods:`, err?.message);
-      }
-      const local = getLocalTable("semi_finished_goods");
-      if (local && local.length > 0) return local;
-      return [];
-    }
-
-    // Special handling for requisitions direct from table
-    if (entity === "requisitions") {
-      try {
-        const { data, error } = await withTimeout(
-          supabase.from("requisitions").select("*").order("id", { ascending: false }),
-          8000
-        );
-        if (error) {
-          console.warn(`[Supabase Fetch Error] requisitions:`, error.message);
-        } else if (data) {
-          const parsed = data.map((r: any) => ({
-            ...r,
-            items: Array.isArray(r.items) ? r.items : (typeof r.items === "string" ? JSON.parse(r.items || "[]") : [])
-          }));
-          setLocalTable("requisitions", parsed);
-          return parsed;
-        }
-      } catch (err: any) {
-        console.warn(`[Supabase Timeout/Error] requisitions:`, err?.message);
-      }
-      const local = getLocalTable("requisitions");
-      if (local && local.length > 0) return local;
-      return [];
-    }
-
+    const table = entity;
     let rows: any[] = [];
     let remoteSuccess = false;
 
+  // Retry loop (up to 2 attempts with generous 15s timeout for mobile networks)
+  for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const { data, error } = await withTimeout(
         supabase.from(table).select("*").order("id", { ascending: false }),
-        8000
+        15000
       );
 
-      if (error) {
-        console.warn(`[Supabase Fetch Error] table '${table}':`, error.message);
-      } else if (data) {
-        // When online, Supabase is the 100% source of truth across all devices and locations!
+      if (!error && data) {
+        // Special JSON items parsing for requisitions
+        let processedData = data;
+        if (entity === "requisitions") {
+          processedData = data.map((r: any) => ({
+            ...r,
+            items: Array.isArray(r.items) ? r.items : (typeof r.items === "string" ? JSON.parse(r.items || "[]") : [])
+          }));
+        }
+
         const queue = getSyncQueue();
         const pendingQueue = queue
           .filter((q) => q.table === table && q.action === "save" && q.record)
           .map((q) => q.record)
-          .filter((r) => r && !data.some((d: any) => String(d.id) === String(r.id) || (d.code && r.code && String(d.code).trim().toLowerCase() === String(r.code).trim().toLowerCase())));
+          .filter((r) => r && !processedData.some((d: any) => String(d.id) === String(r.id) || (d.code && r.code && String(d.code).trim().toLowerCase() === String(r.code).trim().toLowerCase())));
 
-        rows = [...pendingQueue, ...data];
+        rows = [...pendingQueue, ...processedData];
         remoteSuccess = true;
-        setLocalTable(table, data);
+        setLocalTable(table, processedData);
+        break;
+      } else if (error) {
+        console.warn(`[Supabase Fetch Error Attempt ${attempt}] table '${table}':`, error.message);
       }
     } catch (e: any) {
-      console.warn(`[Supabase Timeout/Error] table '${table}':`, e?.message);
+      console.warn(`[Supabase Timeout/Error Attempt ${attempt}] table '${table}':`, e?.message);
     }
 
-    if (!remoteSuccess) {
-      rows = getLocalTable(table);
+    // If attempt 1 failed and custom localStorage config was active, try auto-resetting to default credentials
+    if (attempt === 1 && !remoteSuccess) {
+      const cfg = getSupabaseConfig();
+      if (cfg.isCustom) {
+        console.warn(`Attempt 1 failed for '${table}', auto-resetting custom localStorage config to default embedded credentials...`);
+        resetSupabaseConfig();
+      }
     }
+  }
 
-    // If table is empty, return empty list immediately (0 records)
-    if (rows.length === 0) {
-      return [];
-    }
+  if (!remoteSuccess) {
+    rows = getLocalTable(table);
+  }
+
+  if (rows.length === 0) {
+    return [];
+  }
 
     // Specific relational enrichment for bom_recipes
     if (entity === "bom_recipes") {
@@ -1296,62 +1311,67 @@ export const ALL_17_TABLES = [
  * - Features automatic re-subscription on network disconnect / error / timeout.
  * - Debounces rapid event triggers to optimize network calls while keeping UI updated globally in real time.
  */
+let activeRealtimeChannel: any = null;
+let realtimeRetryCount = 0;
+const MAX_REALTIME_RETRIES = 3;
+
 export function subscribeToRealtimeDatabase(onUpdate: (table: string, eventType: string) => void) {
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let isUnsubscribed = false;
-  let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
   const debouncedNotify = (table: string, eventType: string) => {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       onUpdate(table, eventType);
-    }, 120);
+    }, 250);
   };
 
   try {
-    const channelName = `ideva-realtime-sync-${Math.random().toString(36).substring(2, 9)}`;
+    // 1. Unsubscribe any existing active channel cleanly first
+    if (activeRealtimeChannel) {
+      try {
+        supabase.removeChannel(activeRealtimeChannel);
+      } catch {}
+      activeRealtimeChannel = null;
+    }
+
+    const channelName = "ideva-realtime-global-channel";
     let channel = supabase.channel(channelName);
 
-    // 1. Primary schema-wide listener for INSERT, UPDATE, DELETE
+    // 2. Schema-wide Realtime Listener for table changes
     channel = channel.on(
       "postgres_changes",
       { event: "*", schema: "public" },
       (payload: any) => {
-        console.log(`⚡ [Supabase Realtime Schema] ${payload.eventType} on table '${payload.table}'`);
-        debouncedNotify(payload.table || "unknown", payload.eventType || "UPDATE");
+        const tableName = payload.table || "unknown";
+        console.log(`⚡ [Supabase Realtime] ${payload.eventType} on table '${tableName}'`);
+        debouncedNotify(tableName, payload.eventType || "UPDATE");
       }
     );
 
-    // 2. Explicit per-table listeners for all 17 tables to ensure 100% event catch rate
-    ALL_17_TABLES.forEach((table) => {
-      channel = channel.on(
-        "postgres_changes",
-        { event: "*", schema: "public", table },
-        (payload: any) => {
-          console.log(`⚡ [Supabase Realtime Table] ${payload.eventType} on table '${table}'`);
-          debouncedNotify(table, payload.eventType || "UPDATE");
-        }
-      );
-    });
+    activeRealtimeChannel = channel;
 
-    // 3. Subscribe with auto-reconnect monitoring
+    // 3. Subscribe with Backoff Policy (max 3 retries, no endless 3s loops)
     channel.subscribe((status: string, err?: any) => {
       if (status === "SUBSCRIBED") {
-        console.log("🟢 [Supabase Realtime] Subscribed to all 17 tables successfully!");
+        realtimeRetryCount = 0;
+        console.log("🟢 [Supabase Realtime] Connected & Subscribed successfully!");
       } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-        console.warn(`⚠️ [Supabase Realtime] Channel status '${status}', scheduling re-subscribe...`, err);
-        if (!isUnsubscribed && !retryTimer) {
-          retryTimer = setTimeout(() => {
-            retryTimer = null;
-            if (!isUnsubscribed) {
-              console.log("🔄 [Supabase Realtime] Attempting channel re-subscription...");
+        if (!isUnsubscribed && realtimeRetryCount < MAX_REALTIME_RETRIES) {
+          realtimeRetryCount++;
+          const backoffDelay = Math.min(15000, Math.pow(2, realtimeRetryCount) * 2500);
+          console.warn(`⚠️ [Supabase Realtime] Channel status '${status}'. Attempting reconnect ${realtimeRetryCount}/${MAX_REALTIME_RETRIES} in ${Math.round(backoffDelay/1000)}s...`);
+          setTimeout(() => {
+            if (!isUnsubscribed && activeRealtimeChannel === channel) {
               try {
                 supabase.removeChannel(channel);
               } catch {}
-              // Re-subscribe
+              activeRealtimeChannel = null;
               subscribeToRealtimeDatabase(onUpdate);
             }
-          }, 3000);
+          }, backoffDelay);
+        } else if (realtimeRetryCount >= MAX_REALTIME_RETRIES) {
+          console.info(`ℹ️ [Supabase Realtime] Standby mode active (background HTTP synchronization will continue updating data).`);
         }
       }
     });
@@ -1359,10 +1379,12 @@ export function subscribeToRealtimeDatabase(onUpdate: (table: string, eventType:
     return () => {
       isUnsubscribed = true;
       if (debounceTimer) clearTimeout(debounceTimer);
-      if (retryTimer) clearTimeout(retryTimer);
-      try {
-        supabase.removeChannel(channel);
-      } catch {}
+      if (activeRealtimeChannel === channel) {
+        try {
+          supabase.removeChannel(channel);
+        } catch {}
+        activeRealtimeChannel = null;
+      }
     };
   } catch (err) {
     console.warn("Could not subscribe to Supabase Realtime channel:", err);
