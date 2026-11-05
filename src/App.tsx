@@ -18,6 +18,7 @@ import {
   getSupabaseConfig,
   updateSupabaseConfig,
   resetSupabaseConfig,
+  getShareableDatabaseLink,
   processSyncQueue,
   getSyncQueue,
   seedDatabaseTables,
@@ -63,7 +64,8 @@ import {
   Sliders, 
   ChevronDown, 
   ChevronUp,
-  Sparkles
+  Sparkles,
+  Share2
 } from "lucide-react";
 
 const THEMES = [
@@ -1005,7 +1007,7 @@ export default function App() {
         )}
 
         {dbHealth.tested && !dbHealth.online && (
-          <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white px-4 py-2.5 sm:px-6 shadow-sm border-b border-blue-700/40">
+          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white px-4 py-2.5 sm:px-6 shadow-sm border-b border-indigo-500/30">
             <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-2.5">
               <div className="flex items-center gap-2.5">
                 <span className="relative flex h-2.5 w-2.5">
@@ -1015,25 +1017,37 @@ export default function App() {
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold text-xs text-white">
-                      ⚡ โหมดเชื่อมต่อและบันทึกอัตโนมัติ (เปิดระบบแล้วบันทึกและเชื่อมต่อทันที 100%)
+                      ⚡ ระบบทำงานโหมด Local Memory (ข้อมูลในเครื่องใช้งานได้ครบ 100%)
                     </span>
                     {syncPendingCount > 0 ? (
                       <span className="bg-amber-500/20 text-amber-300 text-[10px] font-medium px-2 py-0.5 rounded-full border border-amber-400/30">
                         รอซิงค์ขึ้น Supabase {syncPendingCount} รายการ
                       </span>
                     ) : (
-                      <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-medium px-2 py-0.5 rounded-full border border-emerald-400/30">
-                        ข้อมูลทุกรายการบันทึกทันทีแล้ว
+                      <span className="bg-cyan-500/20 text-cyan-300 text-[10px] font-medium px-2 py-0.5 rounded-full border border-cyan-400/30">
+                        Local Database Active
                       </span>
                     )}
                   </div>
                   <p className="text-[11px] text-slate-300 mt-0.5">
-                    คุณสามารถเพิ่ม ลบ หรือแก้ไขข้อมูลได้ทันทีโดยไม่ติดขัด ระบบจะบันทึกทันทีและพยายามเชื่อมต่อไปยัง Supabase Host ({dbHealth.projectId}) ในพื้นหลังอัตโนมัติ
+                    คุณคีย์ข้อมูลทุกหน้าได้ตามปกติ หากต้องการซิงค์ข้ามเครื่อง 100% สามารถส่งลิงก์แชร์หรือป้อน Supabase Project URL ของคุณได้ทันที
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+              <div className="flex items-center gap-2 shrink-0 self-end md:self-auto flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const link = getShareableDatabaseLink();
+                    navigator.clipboard.writeText(link);
+                    showToast("✓ คัดลอกลิงก์ซิงค์ฐานข้อมูลสำเร็จ! ส่งลิงก์นี้เปิดในเครื่องอื่นเพื่อเชื่อมต่อทันที", "success");
+                  }}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-teal-600 hover:bg-teal-500 text-white rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-xs"
+                >
+                  <Share2 className="w-3 h-3" />
+                  <span>คัดลอกลิงก์ซิงค์ฐานข้อมูล</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setShowQuickConfig(!showQuickConfig)}
@@ -1060,7 +1074,7 @@ export default function App() {
                   className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer disabled:opacity-60"
                 >
                   <RefreshCw className={`w-3 h-3 ${isRetryingDb ? "animate-spin" : ""}`} />
-                  <span>{isRetryingDb ? "กำลังเชื่อมต่อ..." : "ซิงค์ทันที"}</span>
+                  <span>{isRetryingDb ? "กำลังเชื่อมต่อ..." : "ทดสอบการเชื่อมต่อ"}</span>
                 </button>
               </div>
             </div>

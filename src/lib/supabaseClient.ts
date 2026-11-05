@@ -27,7 +27,7 @@ export function getSupabaseConfig() {
       const urlParam = params.get("supabase_url") || params.get("db_url");
       const keyParam = params.get("supabase_key") || params.get("db_key");
       if (urlParam && keyParam && urlParam.trim() !== "undefined" && keyParam.trim() !== "undefined") {
-        customUrl = urlParam.trim();
+        customUrl = urlParam.trim().replace(/\/rest\/v1\/?$/, "").replace(/\/+$/, "");
         customKey = keyParam.trim();
         localStorage.setItem("custom_supabase_url", customUrl);
         localStorage.setItem("custom_supabase_key", customKey);
@@ -46,7 +46,7 @@ export function getSupabaseConfig() {
       const storedUrl = localStorage.getItem("custom_supabase_url");
       const storedKey = localStorage.getItem("custom_supabase_key");
       if (storedUrl && storedKey && storedUrl.trim() !== "undefined" && storedKey.trim() !== "undefined") {
-        customUrl = storedUrl.trim();
+        customUrl = storedUrl.trim().replace(/\/rest\/v1\/?$/, "").replace(/\/+$/, "");
         customKey = storedKey.trim();
       }
     } catch {}
@@ -221,7 +221,13 @@ export function getLocalTable(table: string): any[] {
     const raw = localStorage.getItem(`${LIVE_STORE_PREFIX}${table}`);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+    // Fallback to initial factory sample data when local storage has no records yet
+    const seed = SAMPLE_SEED_DATA[table];
+    if (Array.isArray(seed) && seed.length > 0) {
+      setLocalTable(table, seed);
+      return seed;
     }
   } catch {}
   return [];
@@ -426,18 +432,18 @@ export async function clientGetList(entity: string): Promise<any[]> {
         setLocalTable(table, processedData);
         break;
       } else if (error) {
-        console.warn(`[Supabase Fetch Error Attempt ${attempt}] table '${table}':`, error.message);
+        // Log query errors discreetly without console spam
+        if (!error.message?.includes("Failed to fetch")) {
+          console.debug(`[Supabase Query] table '${table}':`, error.message);
+        }
       }
     } catch (e: any) {
-      console.warn(`[Supabase Timeout/Error Attempt ${attempt}] table '${table}':`, e?.message);
-    }
-
-    // If attempt 1 failed and custom localStorage config was active, try auto-resetting to default credentials
-    if (attempt === 1 && !remoteSuccess) {
-      const cfg = getSupabaseConfig();
-      if (cfg.isCustom) {
-        console.warn(`Attempt 1 failed for '${table}', auto-resetting custom localStorage config to default embedded credentials...`);
-        resetSupabaseConfig();
+      const isFetchErr = e?.message?.includes("Failed to fetch") || e?.message?.includes("network") || e?.name === "TypeError";
+      if (!isFetchErr) {
+        console.debug(`[Supabase Timeout/Error] table '${table}':`, e?.message);
+      } else {
+        // Network or DNS unreachable: break immediately to use local storage fallback
+        break;
       }
     }
   }
